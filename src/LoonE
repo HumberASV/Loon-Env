@@ -1,0 +1,178 @@
+#!/bin/bash
+
+# Copyright (c) 2026 Carson Fujita
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# The LoonE script is a convenient wrapper for managing the Docker environment for the Loon-E project.
+# Usage:
+#   LoonE [OPTIONS] [IMAGE_NAME]
+# Options:
+#   -h, --help   show this help message and exit
+#   -s, --start  start the Docker container if it's not running
+#   -e, --enter  enter the Docker container
+#   -b, --build   build the Docker image if it doesn't exist
+#   -r, --run     run Loon-E with the specified image, building and starting as needed
+#   -q, --quack   returns "Quack!" (because why not) This is not the same message as the help command for funsies.
+# If no options are provided, it defaults to a quick help message
+
+#---------------------- CONSTANTS ------------------
+# Use second argument as image name, default to setup_img
+IMAGE_NAME="${2:-setup_img}"
+
+# Asset directory and dockerfile for builds
+ASSET_DIR="${ASSET_DIR:-/usr/share/loon-e}"
+DOCKERFILE="${DOCKERFILE:-$ASSET_DIR/Dockerfile}"
+
+# Provide help information and exit
+show_help(){
+        cat <<'EOF'
+Usage: LoonE [IMAGE_NAME]
+
+The LoonE script is a convenient wrapper for managing the Docker environment for the Loon-E project. 
+It can build the Docker image, start the container, and enter it with a single command. :)
+
+Options:
+IMAGE_NAME   optional image name (default: setup_img)
+-h, --help   show this help message and exit
+-s, --start  start the Docker container if it's not running
+-e, --enter  enter the Docker container
+-b, --build   build the Docker image if it doesn't exist
+-r, --run     run Loon-E with the specified image, building and starting as needed
+-q, --quack   what does this do? Try it and find out!
+-v, --version   show version information and exit
+EOF
+}
+
+# Function to check if container is running; it's stupid but readable
+# Returns:
+#   0 if running
+#   1 if not running
+is_container_running() {
+    if docker ps --filter "name=^/${IMAGE_NAME}$" --filter "status=running" --format '{{.Names}}' | grep -xq "${IMAGE_NAME}"; then
+        return 0 # Running
+    else
+        return 1 # Not running
+    fi
+}
+
+# Function to check if image is built
+# also stupid but readable
+# Returns:
+#   0 if image exists
+#   1 if image does not exist
+is_image_built() {
+    if docker image inspect "$IMAGE_NAME" &> /dev/null; then
+        return 0 # Image exists
+    else
+        return 1 # Image does not exist
+    fi
+}
+
+# function to enter the container if it's not running
+enter_container() {
+    xhost +local:root
+    xhost +local:docker
+
+    # Check if the container is running
+    if ! is_container_running; then
+        echo "Container '$IMAGE_NAME' is not running or does not exist."
+        echo "Start it with LoonS ${IMAGE_NAME} (or equivalent) first."
+        exit 1
+    fi
+
+    docker exec -it "$IMAGE_NAME" bash 
+}
+
+build_image() {
+    if ! is_image_built; then
+        echo "Image '$IMAGE_NAME' does not exist. Building it now..."
+
+        if [ -f "$DOCKERFILE" ]; then
+            echo "Using Dockerfile: $DOCKERFILE"
+            docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" "$ASSET_DIR"
+        else
+            echo "Dockerfile not found at $DOCKERFILE. Please check your ASSET_DIR and DOCKERFILE variables."
+            exit 1
+        fi
+    else
+        echo "Image '$IMAGE_NAME' already exists."
+    fi
+}
+
+# Function to start the container if it's not running
+# TODO: contact UDAY or someone to make persist option. It's important so no AI.
+start_container() {
+    xhost +local:root
+    xhost +local:docker
+
+    # Check if the container is running
+    if ! is_container_running; then
+        echo "Container '$IMAGE_NAME' is not running. Starting it now..."
+        docker run --gpus all -it --rm   --runtime nvidia   --network host   --privileged \
+        --name setup_container -e DISPLAY=$DISPLAY   -e XAUTHORITY=$XAUTH \
+        -v /tmp/.X11-unix:/tmp/.X11-unix   -v $XAUTH:$XAUTH -v /tmp/argus_socket:/tmp/argus_socket \
+        -v /dev/video0:/dev/video0 -v /dev/bus/usb:/dev/bus/usb -v /dev/nvhost-ctrl:/dev/nvhost-ctrl \
+        -v /dev/nvhost-ctrl-isp:/dev/nvhost-ctrl-isp -v /dev/nvhost-prof-gpu:/dev/nvhost-prof-gpu \
+        -v /dev/nvhost-nvjpg:/dev/nvhost-nvjpg -v /dev/nvhost-vic:/dev/nvhost-vic -v /dev:/dev \
+        -v /tmp:/tmp -v /etc/systemd/system/zed_x_daemon.service:/etc/systemd/system/zed_x_daemon.service \
+        -v /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/ \
+        -v /home/robo:/home/robo \
+        "$IMAGE_NAME":latest 
+    else
+        echo "Container '$IMAGE_NAME' is already running."
+    fi
+}
+
+# Function to parse command-line arguments
+parse_arguments() {
+    local user=$(whoami)
+    local pid=$$
+    case "${1:-}" in
+        -s|--start)
+            start_container
+            ;;
+        -e|--enter)
+            enter_container
+            ;;
+        -b|--build)
+            build_image
+            ;;
+        -r|--run)
+            run_all
+            ;;
+        -h|--help)
+            show_help
+            ;;
+        -q|--quack)
+            echo "Quack!"
+            ;;
+        -v|--version)
+            echo "Loon-Env version 1.0.0"
+            echo "LoonE version 1.0.0"
+            echo "Quack! Am I a boat or a duck?"
+            ;;
+        *) 
+            echo "No valid option provided. Use -h or --help for usage information."
+            exit 1
+            ;;
+    esac
+}
+
+parse_arguments "$@"

@@ -1,0 +1,303 @@
+#!/bin/bash
+
+# Copyright (c) 2026 Carson Fujita
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# Logger for the Loon-E project. It logs user sessions, processes, and checks for the Docker daemon.
+#
+# Why is it using a KNOWN_USERS_FILE? 
+#   Because Loon-e is blind and can't tell who you are.
+#   No, it's because the log in is dysfunct and we want to be able to track users. 
+#   robo users are users that the system can't identify, so we ask them for a name and save it to a file.
+# Usage:
+#   This is to be invoked in bashrc.
+#   ensure the the script is invoked in bash_logout to log when users exit the terminal.
+
+# ------------------ CONSTANTS ------------------
+# Max size for the log file in bytes (e.g., 5 MiB)
+MAX_LOG_SIZE=$((5 * 1024 * 1024))
+LOG_FILE="${LOG_FILE:-log.txt}"
+
+# The file to store known users. Each line is in the format "username:PID".
+KNOWN_USERS_FILE="${KNOWN_USERS_FILE:-known_users.txt}"
+DEFAULT_USER="robo" # Change this to whatever you set your default user is.
+
+# Ensure directory structure exists
+mkdir -p "$(dirname "$KNOWN_USERS_FILE")"
+mkdir -p "$(dirname "$LOG_FILE")"
+
+touch "$KNOWN_USERS_FILE"
+touch "$LOG_FILE"
+
+# at the bottom of the functions section is the parse arguements function invokation, which is the main entry point.
+# ------------------ FUNCTIONS ------------------
+
+# Function to get the username, with special handling for "robo" users
+get_username() {
+    user=$(whoami)
+    if [ "$DEFAULT_USER" == "$user" ]; then
+        echo "Loon-e is blind and can't tell who you are"
+        echo "Login with your username or ask a sysadmin to add you"
+
+
+        while true; do
+            read -p "What is your name: " user
+
+            if [ -z "$user" ]; then
+                echo "Name cannot be empty. Please enter your name."
+                continue
+            fi
+
+            if command -v "$user" >/dev/null 2>&1; then
+                echo "The name '$user' is a command name. Please choose a different username."
+                continue
+            fi
+
+            if grep -qF "$user:" "$KNOWN_USERS_FILE"; then
+                echo "The name '$user' is already registered. Please enter a different name."
+                continue
+            fi
+
+
+            break
+        done
+    fi
+    # Writting every time a new terminal opens is a bit excessive
+    # but it ensures we have a record of all users that have ever logged in, even if they are "robo" users.
+    # See the LoonExit Script for bash logout
+    echo "$user:$$" >> "$KNOWN_USERS_FILE"
+    echo "Saved '$user' to $KNOWN_USERS_FILE"
+    echo "Welcome Aboard $user!"
+}
+
+# Function to determine log size
+get_log_size() {
+    if [ -f "$LOG_FILE" ]; then
+        log_size=$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)
+    else
+        log_size=0
+    fi
+}
+
+# Function to check log size and warn if it's too large
+check_log_size() {
+    get_log_size
+    if [ "$log_size" -ge "$MAX_LOG_SIZE" ]; then
+        echo "Warning: $LOG_FILE is too large ($log_size bytes, max $MAX_LOG_SIZE bytes)."
+        echo "Consider backing up or clearing it."
+    fi
+}
+
+# Function to check if the user is a sys-admin
+# also stupid but whatever
+is_sysadmin() {
+    if id -nG "$user" | grep -qwE 'sudo|wheel'; then
+        return 0
+    fi
+    return 1
+}
+
+# Function to check if the session is over SSH
+# this is stupid but whatever
+is_ssh() {
+    [ -n "$SSH_CONNECTION" ] || [ -n "$SSH_TTY" ]
+}
+
+# Function to list known users and currently online users
+list_all() {
+    # Ensure current user is logged to KNOWN_USERS_FILE
+    if ! grep -qF "$user:" "$KNOWN_USERS_FILE" 2>/dev/null; then
+        echo "$user:$$" >> "$KNOWN_USERS_FILE"
+    fi
+
+    echo "All known users (from $KNOWN_USERS_FILE):"
+    if [ -f "$KNOWN_USERS_FILE" ]; then
+        awk 'NF' "$KNOWN_USERS_FILE" | sort -u | awk -F: '{printf "  %s (PID: %s)\n", $1, $2}'
+    else
+        echo "  (none)"
+    fi
+
+    echo
+}
+
+# Function to prompt sys-admins about log file management
+manage_log() {
+    if ! is_sysadmin || [ "$log_size" -lt $((MAX_LOG_SIZE * 75 / 100)) ]; then
+        return
+    fi
+
+    list_all
+    echo "$user is recognized as sysadmin and $LOG_FILE is $log_size bytes (>=75% of $MAX_LOG_SIZE)."
+    PS3='Choose an action for $LOG_FILE: '
+    options=("Backup" "Clear" "Skip")
+    if is_ssh; then
+        options+=("Download")
+    fi
+
+    select opt in "${options[@]}"; do
+        case $opt in
+            Backup)
+                timestamp=$(date +%Y%m%d_%H%M%S)
+                cp "$LOG_FILE" "$LOG_FILE.bak.$timestamp"
+                echo "Backed up $LOG_FILE to $LOG_FILE.bak.$timestamp"
+                break
+                ;;
+            Download)
+                if is_ssh; then
+                    echo "Downloading $LOG_FILE in an SSH session."
+                    echo "From your local machine, run: scp ${user}@$(hostname):$(pwd)/$LOG_FILE ./"
+                else
+                    echo "Download option is only available over SSH."
+                fi
+                break
+                ;;
+            Clear)
+                > "$LOG_FILE"
+                echo "Cleared $LOG_FILE"
+                break
+                ;;
+            Skip)
+                echo "No action taken on $LOG_FILE"
+                break
+                ;;
+            *)
+                echo "Invalid option. Please choose again."
+                ;;
+        esac
+    done
+}
+
+# Function to log the user session, processes, and check for Docker daemon
+log_session() {
+    session_data=$(w)
+    processes=$(ps -e)
+
+    echo "$user: Opened a terminal" >> "$LOG_FILE"
+    echo "$session_data" >> "$LOG_FILE"
+    echo "Including you, there are $(tail -n -1 <<< "$session_data" | wc -l) users online!"
+    list_all
+
+    echo "There are $(grep bash <<< "$processes" | wc -l) terminals open!"
+
+    docker_count=$(grep docker <<< "$processes" | wc -l)
+    if [ "$docker_count" -ge 1 ]; then
+        echo "Docker Daemon is running!"
+        echo "Type phelp to work on project"
+    else
+        echo "DOCKER DAEMON IS NOT RUNNING!!!!"
+        echo "ITS THE END OF THE WORLD!!!"
+        echo "SAVE YOURSELF!!!"
+    fi
+}
+
+# Function to remove user from KNOWN_USERS_FILE
+remove_user_on_exit() {
+    local user="$1"
+    local pid="$2"
+
+    # Only process if file exists
+    if [ ! -f "$KNOWN_USERS_FILE" ]; then
+        return
+    fi
+
+    # Create a temporary file
+    local temp_file=$(mktemp)
+
+    # Remove the line matching user:PID and write to temp file
+    grep -vF "$user:$pid" "$KNOWN_USERS_FILE" > "$temp_file"
+
+    # Replace original file with temp file
+    mv "$temp_file" "$KNOWN_USERS_FILE"
+}
+
+# Function to display help information
+show_help() {
+    cat <<'EOF'
+LoonLog - User Session Logger for Loon-E Project
+
+Usage: ./LoonLog [OPTIONS]
+
+Options:
+  -i, --login      Log current user as logging in (default behavior)
+  -o, --logout     Remove current user from KNOWN_USERS_FILE
+  -h, --help       Show this help message and exit
+  -v, --version    Show version information and exit
+
+Examples:
+  ./LoonLog              # Normal login, checks log size, manages logs
+  ./LoonLog -i           # Explicit login
+  ./LoonLog -o           # Log user out
+  ./LoonLog -h           # Show help
+
+Notes:
+  - This script is typically invoked in ~/.bashrc for login
+  - LoonExit script should be invoked in ~/.bash_logout for logout
+EOF
+}
+
+# Function to handle login
+handle_login() {
+    get_username
+    check_log_size
+    manage_log
+    log_session
+}
+
+# Function to handle logout
+handle_logout() {
+    user=$(whoami)
+    pid=$$
+    remove_user_on_exit "$user" "$pid"
+    echo "User $user (PID: $pid) logged out" >> "$LOG_FILE"
+    echo "Goodbye $user!"
+}
+
+# Function to parse command-line arguments
+parse_arguments() {
+    case "${1:-}" in
+        -i|--login)
+            handle_login
+            ;;
+        -o|--logout)
+            handle_logout
+            ;;
+        -h|--help)
+            show_help
+            ;;
+        -v|--version)
+            echo "Loon-Env version 1.0.0"
+            echo "LoonLog version 1.0.0"
+            ;; 
+        "")
+            # No arguments, default to login
+            handle_login
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use -h or --help for usage information"
+            exit 1
+            ;;
+    esac
+}
+
+# ------------------ MAIN ------------------
+
+parse_arguments "$@"
+
