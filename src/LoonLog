@@ -46,6 +46,151 @@ mkdir -p "$(dirname "$LOG_FILE")"
 touch "$KNOWN_USERS_FILE"
 touch "$LOG_FILE"
 
+# We can't make objects so pretend these are objects functions
+# ------------------ User Functions ------------------
+# User:
+# - username - the name of the user, either from whoami or from user input for robo users
+# - terminals - the number of terminals the user has open, determined by counting bash processes
+# - warn_msg - a warning message set by the user to be displayed to all users when they log in
+
+# Function to add users in KNOWN_USERS_FILE
+create_user() {
+    local username="$1"
+    local terminals="${2:-1}" # Default to 1 terminal if not provided
+    echo "$username:$terminals" >> "$KNOWN_USERS_FILE"
+}
+
+# Function to remove user session from KNOWN_USERS_FILE
+remove_user_session() {
+    local username="$1"
+    local amount="${2:-1}" # Default to 1 terminal if not provided
+    # Create a temporary file
+    local temp_file=$(mktemp)
+
+    # Use awk to find the user and update the terminal count, or add the user if not found
+    awk -F: -v user="$username" -v amount="$amount" '
+        BEGIN { found=0 }
+        $1 == user {
+            found=1
+            terminals = $2 - amount
+            if (terminals <= 0) {
+                next # Skip printing this user, effectively removing them
+            }
+            print user ":" terminals
+            next
+        }
+        { print }
+    ' "$KNOWN_USERS_FILE" > "$temp_file"
+
+    # Replace original file with temp file
+    mv "$temp_file" "$KNOWN_USERS_FILE"
+}
+
+# Function to add user session to KNOWN_USERS_FILE
+add_user_session() {
+    local username="$1"
+    local amount="${2:-1}" # Default to 1 terminal if not provided
+    # Create a temporary file
+    local temp_file=$(mktemp)
+
+    # Use awk to find the user and update the terminal count, or add the user if not found
+    awk -F: -v user="$username" -v amount="$amount" '
+        BEGIN { found=0 }
+        $1 == user {
+            found=1
+            terminals = $2 + amount
+            print user ":" terminals
+            next
+        }
+        { print }
+        END {
+            if (found == 0) {
+                print user ":" amount
+            }
+        }
+    ' "$KNOWN_USERS_FILE" > "$temp_file"
+
+    # Replace original file with temp file
+    mv "$temp_file" "$KNOWN_USERS_FILE"
+}
+
+# Warnings not implemented yet
+get_warning() {
+    local user="$1"
+    local warn_msg=$(grep "^$user:*:" "$KNOWN_USERS_FILE" | cut -d: -f2-)
+    if [ -n "$warn_msg" ]; then
+        echo "Warning for $user: $warn_msg"
+    fi
+}
+
+add_warning() {
+    user="$1"
+    session="$2"
+    warn_msg="${3:-}" # Optional second argument for the warning message, but we'll prompt if it's not provided
+    warning=$(get_warning "$user")
+    if [ -n "$warning" ]; then
+        echo "User $user already has a warning message set: $warning"
+        read -p "Do you want to overwrite the existing warning message? (y/n) " confirm
+        if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+            echo "Keeping existing warning message."
+            return
+        fi
+        echo "Overwriting existing warning message."
+        # continue to overwrite the warning message
+    fi
+
+    while true; do
+
+        if [ -z "$warn_msg" ]; then # This is to stop users from being stupid
+            echo "Warning message cannot be empty. Please enter a warning message."
+        elif [[ "$warn_msg" == *":"* ]]; then #this is due to the delimiter used in KNOWN_USERS_FILE
+            echo "Warning message cannot contain colons. Please enter a warning message without colons."
+        elif [[ "$warn_msg" == *$'\n'* ]]; then #This is due to how we read the data on KNOWN_USERS_FILE
+            echo "Warning message cannot contain newlines. Please enter a warning message without newlines."
+        else
+            read -p "Are you sure you want to set the warning message to '$warn_msg'? (y/n) " confirm
+            if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+                echo "Setting warning message to '$warn_msg'"
+                echo "$user:$session:$warn_msg" >> "$KNOWN_USERS_FILE"
+                echo "Warning message set successfully."
+            fi
+            break
+        fi
+        # Down here to emulate do while
+        read -p "Enter a warning message to display to all users on login: " warn_msg
+
+    done
+}
+
+remove_warning() {
+    user="$1"
+    warning=$(get_warning "$user")
+    if [ -z "$warning" ]; then
+        echo "User $user does not have a warning message set."
+        return
+    fi
+
+    read -p "Are you sure you want to remove the warning message for $user? (y/n) " confirm
+    if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
+        # Create a temporary file
+        local temp_file=$(mktemp)
+
+        # Use awk to remove the warning message for the user
+        awk -F: -v user="$user" '
+            BEGIN { OFS=":" }
+            $1 == user { print $1 ":" "" }
+            $1 != user { print }
+        ' "$KNOWN_USERS_FILE" > "$temp_file"
+
+        # Replace original file with temp file
+        mv "$temp_file" "$KNOWN_USERS_FILE"
+        echo "Warning message removed successfully."
+    else
+        echo "Keeping existing warning message."
+    fi
+}
+
+
 # at the bottom of the functions section is the parse arguements function invokation, which is the main entry point.
 # ------------------ FUNCTIONS ------------------
 
@@ -82,7 +227,7 @@ get_username() {
     # Writting every time a new terminal opens is a bit excessive
     # but it ensures we have a record of all users that have ever logged in, even if they are "robo" users.
     # See the LoonExit Script for bash logout
-    echo "$user:$$" >> "$KNOWN_USERS_FILE"
+    add_user_session "$user"
     echo "Saved '$user' to $KNOWN_USERS_FILE"
     echo "Welcome Aboard $user!"
 }
@@ -207,25 +352,8 @@ log_session() {
     fi
 }
 
-# Function to remove user from KNOWN_USERS_FILE
-remove_user_on_exit() {
-    local user="$1"
-    local pid="$2"
-
-    # Only process if file exists
-    if [ ! -f "$KNOWN_USERS_FILE" ]; then
-        return
-    fi
-
-    # Create a temporary file
-    local temp_file=$(mktemp)
-
-    # Remove the line matching user:PID and write to temp file
-    grep -vF "$user:$pid" "$KNOWN_USERS_FILE" > "$temp_file"
-
-    # Replace original file with temp file
-    mv "$temp_file" "$KNOWN_USERS_FILE"
-}
+# remove_user_on_exit() {}
+# Replaced with remove_user_session() which decrements the terminal count instead of removing the user entirely, since users can have multiple terminals open.
 
 # Function to display help information
 show_help() {
@@ -235,16 +363,21 @@ LoonLog - User Session Logger for Loon-E Project
 Usage: ./LoonLog [OPTIONS]
 
 Options:
-  -i, --login      Log current user as logging in (default behavior)
-  -o, --logout     Remove current user from KNOWN_USERS_FILE
-  -h, --help       Show this help message and exit
-  -v, --version    Show version information and exit
+  -i, --login       Log current user as logging in (default behavior)
+  -o, --logout      Remove current user from KNOWN_USERS_FILE
+  -h, --help        Show this help message and exit
+  -v, --version     Show version information and exit
+  -w, --warn        Show a warning to all logins
+  -r, --remove-warn Remove the warning message for the current user
 
 Examples:
   ./LoonLog              # Normal login, checks log size, manages logs
   ./LoonLog -i           # Explicit login
   ./LoonLog -o           # Log user out
   ./LoonLog -h           # Show help
+  ./LoonLog -v           # Show version information
+  ./LoonLog -w "Cheese is delicious"
+  ./LoonLog -r           # Remove the warning message for the current user
 
 Notes:
   - This script is typically invoked in ~/.bashrc for login
@@ -263,8 +396,7 @@ handle_login() {
 # Function to handle logout
 handle_logout() {
     user=$(whoami)
-    pid=$$
-    remove_user_on_exit "$user" "$pid"
+    remove_user_session "$user" "1" # Decrement terminal count by 1
     echo "User $user (PID: $pid) logged out" >> "$LOG_FILE"
     echo "Goodbye $user!"
 }
@@ -282,9 +414,17 @@ parse_arguments() {
             show_help
             ;;
         -v|--version)
-            echo "Loon-Env version 1.0.0"
-            echo "LoonLog version 1.0.0"
+            echo "Loon-Env version 2.0.0"
+            echo "LoonLog version 1.0.2"
             ;; 
+        -w|--warn)
+            user=$(whoami)
+            add_warning "$user" "${2:-}" # Pass the second argument as the warning message, if provided
+            ;;
+        -r|--remove-warn)
+            user=$(whoami)
+            remove_warning "$user"
+            ;;
         "")
             # No arguments, default to login
             handle_login
@@ -300,4 +440,3 @@ parse_arguments() {
 # ------------------ MAIN ------------------
 
 parse_arguments "$@"
-
