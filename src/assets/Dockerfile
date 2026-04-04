@@ -20,6 +20,11 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list && \
     ros-humble-isaac-ros-dnn-image-encoder \
     ros-humble-isaac-ros-tensor-rt \
     ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-ament-cmake-clang-format \
+    time \
+    ros-humble-depthimage-to-laserscan \
+    ros-humble-zed-description \
+    ros-humble-grid-map-rviz-plugin \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------
@@ -31,14 +36,15 @@ RUN wget -q https://download.stereolabs.com/zedsdk/5.2/l4t36.4/jetsons -O zed_sd
 RUN python3 -m pip install --no-cache-dir numpy
 RUN sudo ln -s /usr/local/lib/python3.10/dist-packages/numpy/_core/include /usr/local/lib/python3.10/dist-packages/numpy/core/include
 
-# -----------------------------
-# 3. Clone & Build ZED ROS 2 Wrapper
-# -----------------------------
-RUN mkdir -p /root/ros2_ws/src
-WORKDIR /root/ros2_ws/src
-RUN git clone --recursive https://github.com/stereolabs/zed-ros2-wrapper.git
 
-WORKDIR /root/ros2_ws
+# -----------------------------
+# 3. Clone Repo
+# -----------------------------
+WORKDIR /root/
+RUN git clone --recurse-submodules https://github.com/HumberASV/Loon-E.git
+
+WORKDIR /root/Loon-E/
+RUN mkdir -p /root/Loon-E/src
 
 RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
   apt-get update && \
@@ -47,7 +53,6 @@ RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
   colcon build --parallel-workers 4 --symlink-install \
     --event-handlers console_direct+ \
     --base-paths src \
-    --packages-up-to zed_wrapper \
     --cmake-clean-cache \
     --cmake-args \
       -DCMAKE_BUILD_TYPE=Release \
@@ -66,14 +71,14 @@ ENV MINOR_VERSION=1
 RUN VERSION_REQ_URL="https://catalog.ngc.nvidia.com/api/resources/versions?orgName=nvidia&teamName=isaac&name=isaac_ros_yolov8_assets&isPublic=true&pageNumber=0&pageSize=100&sortOrder=CREATED_DATE_DESC" && \
     LATEST_VERSION_ID=$(curl -s -H "Accept: application/json" "$VERSION_REQ_URL" | jq -r ".recipeVersions[] | .versionId as \$v | \$v | select(test(\"^\\\\d+\\\\.\\\\d+\\\\.\\\\d+$\")) | split(\".\") | {major: .[0]|tonumber, minor: .[1]|tonumber, patch: .[2]|tonumber} | select(.major == $MAJOR_VERSION and .minor <= $MINOR_VERSION) | \$v" | sort -V | tail -n 1) && \
     if [ -n "$LATEST_VERSION_ID" ]; then \
-        mkdir -p /root/ros2_ws/isaac_ros_assets && \
+        mkdir -p /root/Loon-E/src/isaac_ros_assets && \
         curl -LO --request GET "https://api.ngc.nvidia.com/v2/resources/nvidia/isaac/isaac_ros_yolov8_assets/versions/$LATEST_VERSION_ID/files/quickstart.tar.gz" && \
-        tar -xf quickstart.tar.gz -C /root/ros2_ws/isaac_ros_assets && \
+        tar -xf quickstart.tar.gz -C /root/Loon-E/src/isaac_ros_assets && \
         rm quickstart.tar.gz; \
     fi
 
 RUN ln -sf /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 /usr/lib/aarch64-linux-gnu/libv4l2.so
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "source /root/ros2_ws/install/setup.bash" >> /root/.bashrc
+    echo "source /root/Loon-E/install/setup.bash" >> /root/.bashrc
 
-WORKDIR /root/ros2_ws
+WORKDIR /root/Loon-E
