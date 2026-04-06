@@ -136,6 +136,7 @@ start_container() {
         -v /var/nvidia/nvcam/status/:/var/nvidia/nvcam/status/ \
         -v /home/robo:/home/robo \
         -v /home/robo/zed_docker_ai/:/usr/local/zed/resources/ \
+        -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
         "$IMAGE_NAME":latest
     else
         echo "Container '$IMAGE_NAME' is already running."

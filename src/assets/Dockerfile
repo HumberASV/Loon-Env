@@ -79,6 +79,8 @@ RUN VERSION_REQ_URL="https://catalog.ngc.nvidia.com/api/resources/versions?orgNa
 
 RUN ln -sf /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 /usr/lib/aarch64-linux-gnu/libv4l2.so
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "source /root/Loon-E/install/setup.bash" >> /root/.bashrc
+    echo "source /root/Loon-E/install/setup.bash" >> /root/.bashrc \
+    echo "export ROS_DOMAIN_ID=5" >> /root/.bashrc
+
 
 WORKDIR /root/Loon-E
