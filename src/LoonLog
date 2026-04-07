@@ -593,7 +593,7 @@ EOF
 
 # Function to handle login
 handle_login() {
-    get_username
+    get_user
     check_log_size
     manage_log
     log_session
@@ -601,7 +601,7 @@ handle_login() {
 
 # Function to handle logout
 handle_logout() {
-    user=$(whoami)
+    get_user
     update_session "$user" "-1" # Decrement terminal count by 1, and remove user if terminal count goes to 0
     echo "User $user (PID: $pid) logged out" >> "$LOG_FILE"
     echo "Goodbye $user!"
