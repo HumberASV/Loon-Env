@@ -43,11 +43,6 @@ DEFAULT_CACHE_DIR="/var/cache/$APP_NAME"
 # Where source scripts are located
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ------------------ Configuration for Installation Script ------------------
-INSTALLATION_BIN_DIR="${1:-$DEFAULT_INSTALL_BIN_DIR}"
-INSTALLATION_SHARE_DIR="${2:-$DEFAULT_INSTALL_SHARE_DIR}"
-INSTALLATION_CACHE_DIR="${3:-$DEFAULT_CACHE_DIR}"
-
 # ------------------ FUNCTIONS ------------------
 
 # ------------------ COMMON UTILITY FUNCTIONS -------------------
@@ -207,18 +202,36 @@ main() {
     print_summary
 }
 
+parse_arguments() {
+    case "${1:-}" in
+        -h|--help)
+            handle_help
+            ;;
+        -t|--test)
+            INSTALLATION_BIN_DIR="./test-bin"
+            INSTALLATION_SHARE_DIR="./test-share"
+            INSTALLATION_CACHE_DIR="./test-cache"
+            main false
+            echo "Test installation complete. Check the test-bin, test-share, and test-cache directories"
+            ;;
+        "")
+            INSTALLATION_BIN_DIR="$DEFAULT_INSTALL_BIN_DIR"
+            INSTALLATION_SHARE_DIR="$DEFAULT_INSTALL_SHARE_DIR"
+            INSTALLATION_CACHE_DIR="$DEFAULT_CACHE_DIR"
+            main
+            ;;
+        -* )
+            echo "Unknown option: $1" >&2
+            echo "Use -h or --help for usage information." >&2
+            exit 1
+            ;;
+        *)
+            INSTALLATION_BIN_DIR="$1"
+            INSTALLATION_SHARE_DIR="${2:-$DEFAULT_INSTALL_SHARE_DIR}"
+            INSTALLATION_CACHE_DIR="${3:-$DEFAULT_CACHE_DIR}"
+            main
+            ;;
+    esac
+}
 
-# ------------------ PARSE ARGUMENTS ------------------
-
-# Incase I ever add more options.
-case "$1" in
-    -h|--help) handle_help ;;
-    -t|--test) 
-        INSTALLATION_BIN_DIR="./test-bin"
-        INSTALLATION_SHARE_DIR="./test-share"
-        INSTALLATION_CACHE_DIR="./test-cache"
-        main false
-        echo "Test installation complete. Check the test-bin, test-share, and test-cache directories"
-    ;;
-    *) main ;;
-esac
+parse_arguments "$@"
