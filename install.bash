@@ -172,6 +172,28 @@ ensure_log_files() {
     echo "Log files created and permissions set."
 }
 
+ensure_group_permissions() {
+    local target
+
+    echo "Ensuring '$GROUP_NAME' has access to installed files and directories..."
+
+    for target in "$INSTALLATION_BIN_DIR" "$INSTALLATION_SHARE_DIR" "$INSTALLATION_CACHE_DIR"; do
+        [ -e "$target" ] || continue
+        sudo chgrp -R "$GROUP_NAME" "$target"
+        sudo chmod -R g+rwX "$target"
+        # setgid keeps new files/dirs in these paths under the installer group
+        sudo find "$target" -type d -exec chmod g+s {} +
+    done
+
+    for target in "$KNOWN_USERS_FILE" "$LOG_FILE" "$HOME/.loon-e-env"; do
+        [ -e "$target" ] || continue
+        sudo chgrp "$GROUP_NAME" "$target"
+        sudo chmod g+rw "$target"
+    done
+
+    echo "Group permissions configured."
+}
+
 print_summary() {
     cat <<EOF
 Installation complete.
@@ -199,6 +221,7 @@ main() {
         update_shell_hooks
     fi
     ensure_log_files
+    ensure_group_permissions
     print_summary
 }
 
