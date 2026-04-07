@@ -37,7 +37,7 @@
 IMAGE_NAME="${2:-setup_img}"
 
 # Asset directory and dockerfile for builds
-ASSET_DIR="${ASSET_DIR:-/usr/share/loon-e}"
+ASSET_DIR="${ASSET_DIR:-/usr/share/loon-env}"
 DOCKERFILE="${DOCKERFILE:-$ASSET_DIR/Dockerfile}"
 
 # Provide help information and exit
@@ -126,15 +126,18 @@ start_container() {
     if ! is_container_running; then
         echo "Container '$IMAGE_NAME' is not running. Starting it now..."
         docker run --gpus all -it --rm   --runtime nvidia   --network host   --privileged \
-        --name "$IMAGE_NAME" -e DISPLAY=$DISPLAY   -e XAUTHORITY=$XAUTH \
+        --name "$IMAGE_NAME" -e DISPLAY=$DISPLAY -e XAUTHORITY=$XAUTH -e NVIDIA_DRIVER_CAPABILITIES=all \
         -v /tmp/.X11-unix:/tmp/.X11-unix   -v $XAUTH:$XAUTH -v /tmp/argus_socket:/tmp/argus_socket \
         -v /dev/video0:/dev/video0 -v /dev/bus/usb:/dev/bus/usb -v /dev/nvhost-ctrl:/dev/nvhost-ctrl \
         -v /dev/nvhost-ctrl-isp:/dev/nvhost-ctrl-isp -v /dev/nvhost-prof-gpu:/dev/nvhost-prof-gpu \
         -v /dev/nvhost-nvjpg:/dev/nvhost-nvjpg -v /dev/nvhost-vic:/dev/nvhost-vic -v /dev:/dev \
         -v /tmp:/tmp -v /etc/systemd/system/zed_x_daemon.service:/etc/systemd/system/zed_x_daemon.service \
         -v /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/ \
+        -v /var/nvidia/nvcam/status/:/var/nvidia/nvcam/status/ \
         -v /home/robo:/home/robo \
-        "$IMAGE_NAME":latest 
+        -v /home/robo/zed_docker_ai/:/usr/local/zed/resources/ \
+        -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
+        "$IMAGE_NAME":latest
     else
         echo "Container '$IMAGE_NAME' is already running."
     fi
