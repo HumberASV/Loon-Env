@@ -107,7 +107,7 @@ build_image() {
 
         if [ -f "$DOCKERFILE" ]; then
             echo "Using Dockerfile: $DOCKERFILE"
-            docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" "$ASSET_DIR"
+            docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" "$ASSET_DIR" --no-cache
         else
             echo "Dockerfile not found at $DOCKERFILE. Please check your ASSET_DIR and DOCKERFILE variables."
             exit 1
@@ -126,7 +126,7 @@ start_container() {
     # Check if the container is running
     if ! is_container_running; then
         echo "Container '$IMAGE_NAME' is not running. Starting it now..."
-        docker run --gpus all -it --rm   --runtime nvidia   --network host   --privileged \
+        docker run --gpus all -it --rm   --runtime nvidia   --network host  --privileged \
         --name "$IMAGE_NAME" -e DISPLAY=$DISPLAY -e XAUTHORITY=$XAUTH -e NVIDIA_DRIVER_CAPABILITIES=all \
         -v /tmp/.X11-unix:/tmp/.X11-unix   \
         -v $XAUTH:$XAUTH \

@@ -24,6 +24,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV CMAKE_PREFIX_PATH="/usr/local/zed:$CMAKE_PREFIX_PATH"
 ENV ZED_DIR="/usr/local/zed"
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ENV ROS_DOMAIN_ID=5
+ENV AMENT_CMAKE_SYMLINK_INSTALL=ON
+ENV COLCON_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release"
 
 # -----------------------------
 # 1. System dependencies & Isaac ROS Repo
@@ -54,7 +57,6 @@ RUN wget -q https://download.stereolabs.com/zedsdk/5.2/l4t36.4/jetsons -O zed_sd
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 
 RUN python3 -m pip install --no-cache-dir numpy
-RUN sudo ln -s /usr/local/lib/python3.10/dist-packages/numpy/_core/include /usr/local/lib/python3.10/dist-packages/numpy/core/include
 
 
 # -----------------------------
@@ -64,7 +66,6 @@ WORKDIR /root/
 RUN git clone --recurse-submodules https://github.com/HumberASV/Loon-E.git
 
 WORKDIR /root/Loon-E/
-RUN mkdir -p /root/Loon-E/src
 
 RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
   apt-get update && \
@@ -72,7 +73,6 @@ RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
   rosdep install --from-paths src --ignore-src -r -y && \
   colcon build --parallel-workers 4 --symlink-install \
     --event-handlers console_direct+ \
-    --base-paths src \
     --cmake-clean-cache \
     --cmake-args \
       -DCMAKE_BUILD_TYPE=Release \
@@ -84,7 +84,7 @@ RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
 
 
 # -----------------------------
-# 5. NGC Assets & Final Setup
+# 4. NGC Assets & Final Setup
 # -----------------------------
 ENV MAJOR_VERSION=3
 ENV MINOR_VERSION=1
@@ -97,10 +97,11 @@ RUN VERSION_REQ_URL="https://catalog.ngc.nvidia.com/api/resources/versions?orgNa
         rm quickstart.tar.gz; \
     fi
 
-RUN ln -sf /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 /usr/lib/aarch64-linux-gnu/libv4l2.so
+RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
+    ln -sf /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 /usr/lib/aarch64-linux-gnu/libv4l2.so || true
+
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "source /root/Loon-E/install/setup.bash" >> /root/.bashrc &&\
-    echo "export ROS_DOMAIN_ID=5" >> /root/.bashrc
+    echo "test -f /root/Loon-E/install/setup.bash && source /root/Loon-E/install/setup.bash" >> /root/.bashrc
 
 
 WORKDIR /root/Loon-E
