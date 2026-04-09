@@ -4,17 +4,21 @@ services:
     image: ${ZED_X_IMAGE:-zed-x:latest}
     build:
       context: .
-      dockerfile: ${DOCKERFILE:-/usr/share/loon-env/Zedx/Dockerfile}
+      dockerfile: ${ZED_DOCKERFILE:-Zedx/Dockerfile}
     runtime: nvidia
     privileged: true
     network_mode: host
     stdin_open: true
     tty: true
     environment:
-      - DISPLAY=${DISPLAY}
-      - XAUTHORITY=${XAUTH}
+      - DISPLAY=${DISPLAY:-:1}
       - NVIDIA_DRIVER_CAPABILITIES=all
+      - XAUTHORITY=/root/.Xauthority
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
     volumes:
+      - ${XAUTHORITY:-/tmp/.docker.xauth}:/root/.Xauthority:ro
       - /dev/video0:/dev/video0
       - /dev/bus/usb:/dev/bus/usb
       - /dev/nvhost-ctrl:/dev/nvhost-ctrl
@@ -25,18 +29,21 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/
       - /var/nvidia/nvcam/status/:/var/nvidia/nvcam/status/
-      - ${XAUTH}:${XAUTH}
       - /etc/systemd/system/zed_x_daemon.service:/etc/systemd/system/zed_x_daemon.service
       - /var/run/docker.sock:/var/run/docker.sock
       - /home/robo/zed_docker_ai/:/usr/local/zed/resources/
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
-    command: ros2 launch zed_display_rviz2 display_zed_cam.launch.py camera_model:=zedx
+    command: >-
+      /bin/bash -c "echo \"building\" &&
+      source /opt/ros/humble/setup.bash &&
+      source /root/ros2_ws/install/setup.bash &&
+      ros2 launch zed_wrapper zed_camera.launch.py camera_model:=zedx"
 
   loone:
     image: ${LOON_E_IMAGE:-loon-e:latest}
     build:
       context: .
-      dockerfile: ${DOCKERFILE:-/usr/share/loon-env/LoonE/Dockerfile}
+      dockerfile: ${LOONE_DOCKERFILE:-LoonE/Dockerfile}
     runtime: nvidia
     privileged: true
     network_mode: host
@@ -45,12 +52,14 @@ services:
     depends_on:
       - zed
     environment:
-      - DISPLAY=${DISPLAY}
-      - XAUTHORITY=${XAUTH}
+      - DISPLAY=${DISPLAY:-:1}
       - NVIDIA_DRIVER_CAPABILITIES=all
+      - XAUTHORITY=/root/.Xauthority
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ${XAUTH}:${XAUTH}
       - /dev:/dev
       - /tmp:/tmp
       - /home/robo:/home/robo

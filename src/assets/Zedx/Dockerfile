@@ -25,6 +25,26 @@
 
 FROM nvcr.io/nvidia/isaac/ros:aarch64-ros2_humble_4c0c55dddd2bbcc3e8d5f9753bee634c
 
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CMAKE_PREFIX_PATH="/usr/local/zed:$CMAKE_PREFIX_PATH"
+ENV ZED_DIR="/usr/local/zed"
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+# -----------------------------
+# 0. Jetson APT keyring bootstrap
+# -----------------------------
+RUN set -eux; \
+    mkdir -p /usr/share/keyrings; \
+    curl -fsSL https://repo.download.nvidia.com/jetson/jetson-ota-public.asc \
+    | gpg --dearmor -o /usr/share/keyrings/nvidia-jetson-archive-keyring.gpg; \
+    curl -fsSL https://dl.yarnpkg.com/debian/pubkey.gpg \
+    | gpg --dearmor -o /usr/share/keyrings/yarn-archive-keyring.gpg; \
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do \
+        [ -f "$f" ] || continue; \
+        sed -i 's|^deb \(\[[^]]*\] \)\?https://repo.download.nvidia.com/jetson/|deb [signed-by=/usr/share/keyrings/nvidia-jetson-archive-keyring.gpg] https://repo.download.nvidia.com/jetson/|g' "$f"; \
+        sed -i 's|^deb \(\[[^]]*\] \)\?https://dl.yarnpkg.com/debian/|deb [signed-by=/usr/share/keyrings/yarn-archive-keyring.gpg] https://dl.yarnpkg.com/debian/|g' "$f"; \
+    done
+
 # -----------------------------
 # 1. System dependencies & Isaac ROS Repo
 # -----------------------------
@@ -34,7 +54,7 @@ RUN echo "run" && \
     libusb-1.0-0 libv4l-0 kmod \
     libqt5xml5 libqt5core5a libqt5gui5 libqt5widgets5 libqt5opengl5 \
     && curl -fsSL https://isaac.download.nvidia.com/isaac-ros/repos.key | gpg --dearmor -o /usr/share/keyrings/nvidia-isaac-ros.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/nvidia-isaac-ros.gpg] https://isaac.download.nvidia.com/isaac-ros/release-3 jammy release-3" | tee /etc/apt/sources.list.d/nvidia-isaac-ros.list \
+    && echo "deb [signed-by=/usr/share/keyrings/nvidia-isaac-ros.gpg] https://isaac.download.nvidia.com/isaac-ros/release-3 jammy main" | tee /etc/apt/sources.list.d/nvidia-isaac-ros.list \
     && apt-get update && apt-get install -y \
     ros-humble-isaac-ros-yolov8 \
     ros-humble-isaac-ros-dnn-image-encoder \
@@ -53,7 +73,7 @@ RUN echo "run" && \
 RUN wget -q https://download.stereolabs.com/zedsdk/5.2/l4t36.4/jetsons -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 
-RUN python3 -m pip install --no-cache-dir numpy
+RUN python3 -m pip install --no-cache-dir "numpy<2"
 
 
 # -----------------------------
@@ -67,14 +87,17 @@ WORKDIR /root/ros2_ws/
 # -----------------------------
 
 # Install wrapper for camera
-RUN git clone --recurse-submodules https://github.com/stereolabs/zed-ros2-wrapper.git
+RUN git clone --recurse-submodules https://github.com/stereolabs/zed-ros2-wrapper.git src/zed-ros2-wrapper
 
 # (Optional) Install examples for wrapper
-RUN git clone --recurse-submodules https://github.com/stereolabs/zed-ros2-examples.git
+RUN git clone --recurse-submodules https://github.com/stereolabs/zed-ros2-examples.git src/zed-ros2-examples
 
 # -----------------------------
 # 5. Build ROS workspace
 # -----------------------------
+
+WORKDIR /root/ros2_ws/
+
 
 RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
   apt-get update && \
@@ -82,13 +105,15 @@ RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
   rosdep install --from-paths src --ignore-src -r -y && \
   colcon build --parallel-workers 4 --symlink-install \
     --event-handlers console_direct+ \
+    --base-paths src \
     --cmake-clean-cache \
     --cmake-args \
       -DCMAKE_BUILD_TYPE=Release \
       -DZED_SDK_ROOT=/usr/local/zed \
       -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
       -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
-      --no-warn-unused-cli"
+      --no-warn-unused-cli && \
+  rm -rf /var/lib/apt/lists/*"
 
 # -----------------------------
 # 6. NGC Assets & Final Setup

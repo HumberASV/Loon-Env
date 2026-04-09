@@ -34,15 +34,16 @@ set -euo pipefail
 APP_NAME="Loon-Env"
 VERSION="2.0.2"
 GROUP_NAME="loon-env-users"
+HOME="$(eval echo "~$SUDO_USER")" # Determine the home directory of the user running the script with sudo
 
 # Default installation paths (can be overridden by command-line arguments)
 DEFAULT_INSTALL_BIN_DIR="/usr/local/bin"
 DEFAULT_INSTALL_SHARE_DIR="/usr/share/$APP_NAME"
 DEFAULT_CACHE_DIR="/var/cache/$APP_NAME"
 
-# Dockerfile paths
-LOON_E_IMAGE="${DEFAULT_INSTALL_SHARE_DIR}/LoonE/Dockerfile"
-ZED_X_IMAGE="${DEFAULT_INSTALL_SHARE_DIR}/Zedx/Dockerfile"
+# Docker image defaults
+LOON_E_IMAGE="loon-e:latest"
+ZED_X_IMAGE="zed-x:latest"
 
 # Where source scripts are located
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -143,13 +144,25 @@ configure_cache_directory() {
 }
 
 write_environment_file() {
+    echo "Writing environment variables to ~/.loon-e-env..."
+    touch "$HOME/.loon-e-env"
+    sudo chgrp "$GROUP_NAME" "$HOME/.loon-e-env"
+    sudo chmod 660 "$HOME/.loon-e-env"
     sudo cat > "$HOME/.loon-e-env" <<EOF
 export KNOWN_USERS_FILE="$KNOWN_USERS_FILE"
 export LOG_FILE="$LOG_FILE"
 export LOON_E_IMAGE="${LOON_E_IMAGE}"
 export ZED_X_IMAGE="${ZED_X_IMAGE}"
 export LOON_ENV_VERSION="${VERSION}"
+export XAUTHORITY="${HOME}/.Xauthority"
+
 EOF
+    result=$(ls -l "$HOME/.loon-e-env" | grep ".loon-e-env")
+    if [ -n "$result" ]; then
+        echo "Environment file permissions: $result"
+    else
+        echo "Failed to verify permissions for ~/.loon-e-env" >&2
+    fi
     echo "Environment variables written to ~/.loon-e-env"
 }
 

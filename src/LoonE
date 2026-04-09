@@ -104,8 +104,27 @@ enter_container() {
 
 # This function will compose both the Zedx and Loon-E ros containers
 run_services() {
+    export DISPLAY="${DISPLAY:-:1}"
+    local host_xauth="${XAUTHORITY:-$HOME/.Xauthority}"
+    local docker_xauth="/tmp/.docker.xauth"
+
+    if command -v xauth >/dev/null 2>&1; then
+        touch "$docker_xauth"
+        xauth nlist "$DISPLAY" | sed -e 's/^..../ffff/' | xauth -f "$docker_xauth" nmerge - >/dev/null 2>&1 || true
+        chmod 644 "$docker_xauth"
+        export XAUTHORITY="$docker_xauth"
+    else
+        export XAUTHORITY="$host_xauth"
+    fi
+
+    if [ ! -f "$XAUTHORITY" ]; then
+        echo "Warning: Xauthority file not found at '$XAUTHORITY'. X11 apps like rviz2 may fail to start."
+    fi
+
+    DISPLAY="$DISPLAY" xhost +local:root
+    DISPLAY="$DISPLAY" xhost +local:docker
     echo Building zed and loone containers...
-    docker compose -f "$ASSET_DIR/compose.yaml" up -d build
+    docker compose -f "$ASSET_DIR/compose.yaml" up -d
 }
 
 # Function to parse command-line arguments

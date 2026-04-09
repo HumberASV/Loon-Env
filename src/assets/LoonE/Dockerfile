@@ -22,6 +22,21 @@
 FROM nvcr.io/nvidia/isaac/ros:aarch64-ros2_humble_4c0c55dddd2bbcc3e8d5f9753bee634c
 
 # -----------------------------
+# 0. Jetson APT keyring bootstrap
+# -----------------------------
+RUN set -eux; \
+    mkdir -p /usr/share/keyrings; \
+    curl -fsSL https://repo.download.nvidia.com/jetson/jetson-ota-public.asc \
+    | gpg --dearmor -o /usr/share/keyrings/nvidia-jetson-archive-keyring.gpg; \
+    curl -fsSL https://dl.yarnpkg.com/debian/pubkey.gpg \
+    | gpg --dearmor -o /usr/share/keyrings/yarn-archive-keyring.gpg; \
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do \
+        [ -f "$f" ] || continue; \
+        sed -i 's|^deb \(\[[^]]*\] \)\?https://repo.download.nvidia.com/jetson/|deb [signed-by=/usr/share/keyrings/nvidia-jetson-archive-keyring.gpg] https://repo.download.nvidia.com/jetson/|g' "$f"; \
+        sed -i 's|^deb \(\[[^]]*\] \)\?https://dl.yarnpkg.com/debian/|deb [signed-by=/usr/share/keyrings/yarn-archive-keyring.gpg] https://dl.yarnpkg.com/debian/|g' "$f"; \
+    done
+
+# -----------------------------
 # 1. System dependencies & Isaac ROS Repo
 # -----------------------------
 RUN echo "run" && \
@@ -30,7 +45,7 @@ RUN echo "run" && \
     libusb-1.0-0 libv4l-0 kmod \
     libqt5xml5 libqt5core5a libqt5gui5 libqt5widgets5 libqt5opengl5 \
     && curl -fsSL https://isaac.download.nvidia.com/isaac-ros/repos.key | gpg --dearmor -o /usr/share/keyrings/nvidia-isaac-ros.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/nvidia-isaac-ros.gpg] https://isaac.download.nvidia.com/isaac-ros/release-3 jammy release-3" | tee /etc/apt/sources.list.d/nvidia-isaac-ros.list \
+    && echo "deb [signed-by=/usr/share/keyrings/nvidia-isaac-ros.gpg] https://isaac.download.nvidia.com/isaac-ros/release-3 jammy main" | tee /etc/apt/sources.list.d/nvidia-isaac-ros.list \
     && apt-get update && apt-get install -y \
     ros-humble-isaac-ros-yolov8 \
     ros-humble-isaac-ros-dnn-image-encoder \
@@ -61,22 +76,9 @@ RUN git clone --recurse-submodules https://github.com/HumberASV/Loon-E.git
 
 # This may fail if the clone didn't work
 WORKDIR /root/Loon-E/
+RUN mkdir -p /root/Loon-E/src
 
-RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
-  apt-get update && \
-  rosdep update && \
-  rosdep install --from-paths src --ignore-src -r -y && \
-  colcon build --parallel-workers 4 --symlink-install \
-    --event-handlers console_direct+ \
-    --cmake-clean-cache \
-    --cmake-args \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DZED_SDK_ROOT=/usr/local/zed \
-      -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
-      -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
-      --no-warn-unused-cli && \
-  rm -rf /var/lib/apt/lists/*"
-
+RUN /bin/bash -c "source /opt/ros/humble/setup.bash"
 
 # -----------------------------
 # 4. NGC Assets & Final Setup
