@@ -39,7 +39,7 @@ LOONE_VERSION="2.0.0"
 IMAGE_NAME="${2:-${LOON_E_IMAGE:-loon-e:latest}}"
 
 # Asset directory and dockerfile for builds
-ASSET_DIR="${ASSET_DIR:-/usr/share/loon-env}"
+ASSET_DIR="${ASSET_DIR:-/usr/share/Loon-Env}"
 DOCKERFILE="${DOCKERFILE:-$ASSET_DIR/LoonE/Dockerfile}"
 
 #---------------------- FUNCTIONS ------------------
