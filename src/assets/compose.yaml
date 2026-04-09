@@ -1,0 +1,64 @@
+services:
+
+  zed:
+    image: ${ZED_X_IMAGE:-zed-x:latest}
+    build:
+      context: .
+      dockerfile: ${DOCKERFILE:-/usr/share/loon-env/Zedx/Dockerfile}
+    runtime: nvidia
+    privileged: true
+    network_mode: host
+    stdin_open: true
+    tty: true
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=${XAUTH}
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - /dev/video0:/dev/video0
+      - /dev/bus/usb:/dev/bus/usb
+      - /dev/nvhost-ctrl:/dev/nvhost-ctrl
+      - /dev/nvhost-ctrl-isp:/dev/nvhost-ctrl-isp
+      - /dev/nvhost-prof-gpu:/dev/nvhost-prof-gpu
+      - /dev/nvhost-nvjpg:/dev/nvhost-nvjpg
+      - /dev/nvhost-vic:/dev/nvhost-vic
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/
+      - /var/nvidia/nvcam/status/:/var/nvidia/nvcam/status/
+      - ${XAUTH}:${XAUTH}
+      - /etc/systemd/system/zed_x_daemon.service:/etc/systemd/system/zed_x_daemon.service
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/robo/zed_docker_ai/:/usr/local/zed/resources/
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    command: ros2 launch zed_display_rviz2 display_zed_cam.launch.py camera_model:=zedx
+
+  loone:
+    image: ${LOON_E_IMAGE:-loon-e:latest}
+    build:
+      context: .
+      dockerfile: ${DOCKERFILE:-/usr/share/loon-env/LoonE/Dockerfile}
+    runtime: nvidia
+    privileged: true
+    network_mode: host
+    stdin_open: true
+    tty: true
+    depends_on:
+      - zed
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=${XAUTH}
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ${XAUTH}:${XAUTH}
+      - /dev:/dev
+      - /tmp:/tmp
+      - /home/robo:/home/robo
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

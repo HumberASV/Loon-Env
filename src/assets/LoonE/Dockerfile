@@ -1,4 +1,5 @@
 # Copyright (c) 2026 Carson Fujita
+# Copyright (c) 2026 Uday Chahal
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,18 +21,10 @@
 
 FROM nvcr.io/nvidia/isaac/ros:aarch64-ros2_humble_4c0c55dddd2bbcc3e8d5f9753bee634c
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV CMAKE_PREFIX_PATH="/usr/local/zed:$CMAKE_PREFIX_PATH"
-ENV ZED_DIR="/usr/local/zed"
-ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-ENV ROS_DOMAIN_ID=5
-ENV AMENT_CMAKE_SYMLINK_INSTALL=ON
-ENV COLCON_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release"
-
 # -----------------------------
 # 1. System dependencies & Isaac ROS Repo
 # -----------------------------
-RUN rm -f /etc/apt/sources.list.d/yarn.list && \
+RUN echo "run" && \
     apt-get update && apt-get install -y \
     wget curl gnupg2 lsb-release ca-certificates jq git zstd udev \
     libusb-1.0-0 libv4l-0 kmod \
@@ -63,8 +56,10 @@ RUN python3 -m pip install --no-cache-dir numpy
 # 3. Clone Repo
 # -----------------------------
 WORKDIR /root/
+
 RUN git clone --recurse-submodules https://github.com/HumberASV/Loon-E.git
 
+# This may fail if the clone didn't work
 WORKDIR /root/Loon-E/
 
 RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \

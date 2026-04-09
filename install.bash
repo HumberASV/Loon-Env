@@ -40,6 +40,10 @@ DEFAULT_INSTALL_BIN_DIR="/usr/local/bin"
 DEFAULT_INSTALL_SHARE_DIR="/usr/share/$APP_NAME"
 DEFAULT_CACHE_DIR="/var/cache/$APP_NAME"
 
+# Dockerfile paths
+LOON_E_IMAGE="${DEFAULT_INSTALL_SHARE_DIR}/LoonE/Dockerfile"
+ZED_X_IMAGE="${DEFAULT_INSTALL_SHARE_DIR}/Zedx/Dockerfile"
+
 # Where source scripts are located
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -116,7 +120,7 @@ install_scripts() {
 copy_assets() {
     echo "Copying assets..."
     if [ -d "$ROOT_DIR/src/assets" ]; then
-        sudo cp -r "$ROOT_DIR/src/assets"/* "$INSTALLATION_SHARE_DIR/"
+        sudo cp -frv "$ROOT_DIR/src/assets"/* "$INSTALLATION_SHARE_DIR/"
     fi
     echo "Assets copied to $INSTALLATION_SHARE_DIR"
 }
@@ -142,6 +146,9 @@ write_environment_file() {
     sudo cat > "$HOME/.loon-e-env" <<EOF
 export KNOWN_USERS_FILE="$KNOWN_USERS_FILE"
 export LOG_FILE="$LOG_FILE"
+export LOON_E_IMAGE="${LOON_E_IMAGE}"
+export ZED_X_IMAGE="${ZED_X_IMAGE}"
+export LOON_ENV_VERSION="${VERSION}"
 EOF
     echo "Environment variables written to ~/.loon-e-env"
 }

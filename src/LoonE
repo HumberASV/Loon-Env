@@ -21,6 +21,8 @@
 # SOFTWARE.
 
 # The LoonE script is a convenient wrapper for managing the Docker environment for the Loon-E project.
+# Version
+LOONE_VERSION="2.0.0"
 # Usage:
 #   LoonE [OPTIONS] [IMAGE_NAME]
 # Options:
@@ -34,11 +36,11 @@
 
 #---------------------- CONSTANTS ------------------
 # Use second argument as image name, default to setup_img
-IMAGE_NAME="${2:-setup_img}"
+IMAGE_NAME="${2:-${LOON_E_IMAGE:-loon-e:latest}}"
 
 # Asset directory and dockerfile for builds
 ASSET_DIR="${ASSET_DIR:-/usr/share/loon-env}"
-DOCKERFILE="${DOCKERFILE:-$ASSET_DIR/Dockerfile}"
+DOCKERFILE="${DOCKERFILE:-$ASSET_DIR/LoonE/Dockerfile}"
 
 #---------------------- FUNCTIONS ------------------
 # Provide help information and exit
@@ -54,8 +56,7 @@ IMAGE_NAME   optional image name (default: setup_img)
 -h, --help   show this help message and exit
 -s, --start  start the Docker container if it's not running
 -e, --enter  enter the Docker container
--b, --build   build the Docker image if it doesn't exist
--r, --run     run Loon-E with the specified image, building and starting as needed
+-b, --build   build and run services
 -q, --quack   what does this do? Try it and find out!
 -v, --version   show version information and exit
 EOF
@@ -101,56 +102,10 @@ enter_container() {
     docker exec -it "$IMAGE_NAME" bash 
 }
 
-build_image() {
-    if ! is_image_built; then
-        echo "Image '$IMAGE_NAME' does not exist. Building it now..."
-
-        if [ -f "$DOCKERFILE" ]; then
-            echo "Using Dockerfile: $DOCKERFILE"
-            docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" "$ASSET_DIR" --no-cache
-        else
-            echo "Dockerfile not found at $DOCKERFILE. Please check your ASSET_DIR and DOCKERFILE variables."
-            exit 1
-        fi
-    else
-        echo "Image '$IMAGE_NAME' already exists."
-    fi
-}
-
-# Function to start the container if it's not running
-# TODO: contact UDAY or someone to make persist option. It's important so no AI.
-start_container() {
-    xhost +local:root
-    xhost +local:docker
-
-    # Check if the container is running
-    if ! is_container_running; then
-        echo "Container '$IMAGE_NAME' is not running. Starting it now..."
-        docker run --gpus all -it --rm   --runtime nvidia   --network host  --privileged \
-        --name "$IMAGE_NAME" -e DISPLAY=$DISPLAY -e XAUTHORITY=$XAUTH -e NVIDIA_DRIVER_CAPABILITIES=all \
-        -v /tmp/.X11-unix:/tmp/.X11-unix   \
-        -v $XAUTH:$XAUTH \
-        -v /tmp/argus_socket:/tmp/argus_socket \
-        -v /dev/video0:/dev/video0 \
-        -v /dev/bus/usb:/dev/bus/usb \
-        -v /dev/nvhost-ctrl:/dev/nvhost-ctrl \
-        -v /dev/nvhost-ctrl-isp:/dev/nvhost-ctrl-isp \
-        -v /dev/nvhost-prof-gpu:/dev/nvhost-prof-gpu \
-        -v /dev/nvhost-nvjpg:/dev/nvhost-nvjpg \
-        -v /dev/nvhost-vic:/dev/nvhost-vic \
-        -v /dev:/dev \
-        -v /tmp:/tmp \
-        -v /etc/systemd/system/zed_x_daemon.service:/etc/systemd/system/zed_x_daemon.service \
-        -v /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/ \
-        -v /var/nvidia/nvcam/status/:/var/nvidia/nvcam/status/ \
-        -v /home/robo:/home/robo \
-        -v /var/run/docker.sock:/var/run/docker.sock \
-        -v /home/robo/zed_docker_ai/:/usr/local/zed/resources/ \
-        -v /sys/fs/cgroup:/sys/fs/cgroup:ro \
-        "$IMAGE_NAME":latest
-    else
-        echo "Container '$IMAGE_NAME' is already running."
-    fi
+# This function will compose both the Zedx and Loon-E ros containers
+run_services() {
+    echo Building zed and loone containers...
+    docker compose -f "$ASSET_DIR/compose.yml" up -d build
 }
 
 # Function to parse command-line arguments
@@ -165,10 +120,7 @@ parse_arguments() {
             enter_container
             ;;
         -b|--build)
-            build_image
-            ;;
-        -r|--run)
-            run_all
+            run_services
             ;;
         -h|--help)
             show_help
@@ -177,8 +129,8 @@ parse_arguments() {
             echo "Quack!"
             ;;
         -v|--version)
-            echo "Loon-Env version 1.0.2"
-            echo "LoonE version 1.0.2"
+            echo "Loon-Env version ${LOON_ENV_VERSION}"
+            echo "LoonE version ${LOONE_VERSION}"
             echo "Quack! Am I a boat or a duck?"
             ;;
         *) 

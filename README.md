@@ -10,8 +10,15 @@ Setup and logging scripts for Loon-E.
 
 ## Global environment variables
 
-- `KNOWN_USERS_FILE` - path to the user tracking file (default from install: `/var/cache/loon-env/known_users.txt`
-- `LOG_FILE` - path to the log file (default from install: `/var/cache/loon-env/log.txt` or fallback `~/.cache/loon-env/log.txt`).
+
+| Name | Purpose |
+|---|---|
+| KNOWN_USERS_FILE | Path to the file tracking known users and their session counts. |
+| LOG_FILE | Path to the log file where session events are recorded. |
+| LOON_E_IMAGE | Name of the Docker image to build for Loon-E (default: `loon-e:latest`) |
+| ZED_X_IMAGE | Name of the Docker image to build for ZED-X (default: `zed-x:latest`) |
+
+---
 
 ## Requirements
 
