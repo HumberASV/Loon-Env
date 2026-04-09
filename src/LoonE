@@ -105,7 +105,7 @@ enter_container() {
 # This function will compose both the Zedx and Loon-E ros containers
 run_services() {
     echo Building zed and loone containers...
-    docker compose -f "$ASSET_DIR/compose.yml" up -d build
+    docker compose -f "$ASSET_DIR/compose.yaml" up -d build
 }
 
 # Function to parse command-line arguments
