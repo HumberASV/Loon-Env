@@ -77,15 +77,20 @@ For full compose variable details, see `wiki/compose.md`.
 
 Supported options:
 
-- `-b`, `--build`: starts the ZED-X and Loon-E compose services.
-- `--build-zed`: builds only the ZED service image.
-- `--build-loone`: builds only the Loon-E service image.
+- `-b`, `--build`: builds both services and starts the compose stack; accepts optional profile argument `virtual` or `zedx`.
+- `--build-zed`: builds only the ZED service image; accepts optional profile argument `virtual` or `zedx`.
+- `--build-loone`: builds only the Loon-E service image; accepts optional profile argument `virtual` or `zedx`.
 - `-n`, `--no-cache`: disables Docker build cache when used with build flags.
 - `-e`, `--enter`: enters a running container by image/container name.
 - `-h`, `--help`: prints usage.
 - `-q`, `--quack`: prints `Quack!`.
 - `-s`, `--start`: reserved by the script, but currently calls a missing `start_container` function.
 - `-v`, `--version`: prints version information.
+
+Build profiles:
+
+- `virtual`: exports `ZED_SIM_MODE=true`, `ZED_USE_SIM_TIME=true`, `ZED_CAMERA_MODEL=zedx`.
+- `zedx`: exports `ZED_SIM_MODE=false`, `ZED_USE_SIM_TIME=false`, `ZED_CAMERA_MODEL=zedx`.
 
 The command also prepares X11 access for container entry and compose launches.
 

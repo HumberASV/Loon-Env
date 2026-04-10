@@ -19,15 +19,18 @@ LoonE [OPTION] [IMAGE_NAME]
 
 - `-b`, `--build`
   Builds `zed` and `loone`, then starts/recreates the compose stack.
+  Accepts optional profile argument: `virtual` or `zedx`.
 
 - `--build-zed`
   Builds only the `zed` service image.
+  Accepts optional profile argument: `virtual` or `zedx`.
 
 - `--build-loone`
   Builds only the `loone` service image.
+  Accepts optional profile argument: `virtual` or `zedx`.
 
 - `-n`, `--no-cache`
-  Use Docker build without cache. Supported with `--build`, `--build-zed`, and `--build-loone` as the second argument.
+  Use Docker build without cache. Supported with `--build`, `--build-zed`, and `--build-loone`.
 
 - `-e`, `--enter`
   Opens an interactive shell in a running container whose name matches the chosen image name.
@@ -64,6 +67,11 @@ LoonE [OPTION] [IMAGE_NAME]
 - Compose pass-through variables
   Any variables documented in `wiki/compose.md` (for example `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION`, `ZED_*`, `LOONE_*`) can be exported before running `LoonE` and will be consumed by `docker compose`.
 
+- Build profiles
+  `virtual` exports `ZED_SIM_MODE=true` and `ZED_USE_SIM_TIME=true`.
+  `zedx` exports `ZED_SIM_MODE=false` and `ZED_USE_SIM_TIME=false`.
+  Both profiles export `ZED_CAMERA_MODEL=zedx`.
+
 ## Examples
 
 Build and start the stack:
@@ -76,6 +84,18 @@ Build and start without cache:
 
 ```bash
 LoonE -b --no-cache
+```
+
+Build and start in virtual profile:
+
+```bash
+LoonE -b virtual
+```
+
+Build ZED in hardware profile without cache:
+
+```bash
+LoonE --build-zed zedx --no-cache
 ```
 
 Build only ZED:

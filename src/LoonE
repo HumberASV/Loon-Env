@@ -42,6 +42,9 @@ IMAGE_NAME="${2:-${LOON_E_IMAGE:-loon-e:latest}}"
 ASSET_DIR="${ASSET_DIR:-/usr/share/Loon-Env}"
 DOCKERFILE="${DOCKERFILE:-$ASSET_DIR/LoonE/Dockerfile}"
 
+BUILD_PROFILE=""
+BUILD_NO_CACHE=0
+
 #---------------------- FUNCTIONS ------------------
 # Display command usage and option help text.
 # Version: 2.0.0
@@ -60,12 +63,73 @@ IMAGE_NAME   optional image name (default: setup_img)
 -s, --start  start the Docker container if it's not running
 -e, --enter  enter the Docker container
 -b, --build   build and run services
+               optional build profile: virtual | zedx
     --build-zed    build only the zed service
+                   optional build profile: virtual | zedx
     --build-loone  build only the loone service
+                   optional build profile: virtual | zedx
 -n, --no-cache    build images without Docker build cache (use with build flags)
 -q, --quack   what does this do? Try it and find out!
 -v, --version   show version information and exit
 EOF
+}
+
+# Parse optional build arguments after a build flag.
+# Accepted values:
+#   virtual | zedx : profile that sets ZED runtime environment variables
+#   -n | --no-cache : build with docker no-cache
+parse_build_args() {
+    BUILD_PROFILE=""
+    BUILD_NO_CACHE=0
+
+    for arg in "$@"; do
+        case "$arg" in
+            virtual|zedx)
+                if [ -n "$BUILD_PROFILE" ]; then
+                    echo "Error: multiple build profiles provided ('$BUILD_PROFILE' and '$arg')."
+                    echo "Use only one profile: virtual or zedx."
+                    return 1
+                fi
+                BUILD_PROFILE="$arg"
+                ;;
+            -n|--no-cache)
+                BUILD_NO_CACHE=1
+                ;;
+            "")
+                ;;
+            *)
+                echo "Error: unknown build argument '$arg'."
+                echo "Allowed build arguments: virtual, zedx, -n, --no-cache."
+                return 1
+                ;;
+        esac
+    done
+}
+
+# Apply profile-driven environment overrides for compose-based runs.
+apply_build_profile() {
+    local profile="${1:-}"
+
+    case "$profile" in
+        virtual)
+            export ZED_SIM_MODE=true
+            export ZED_USE_SIM_TIME=true
+            export ZED_CAMERA_MODEL=zedx
+            echo "Using build profile: virtual (ZED_SIM_MODE=true, ZED_USE_SIM_TIME=true)."
+            ;;
+        zedx)
+            export ZED_SIM_MODE=false
+            export ZED_USE_SIM_TIME=false
+            export ZED_CAMERA_MODEL=zedx
+            echo "Using build profile: zedx (ZED_SIM_MODE=false, ZED_USE_SIM_TIME=false)."
+            ;;
+        "")
+            ;;
+        *)
+            echo "Error: unsupported build profile '$profile'."
+            return 1
+            ;;
+    esac
 }
 
 # Check whether the target container is currently running.
@@ -191,12 +255,6 @@ run_services() {
 #   0: if the selected command completes successfully.
 #   1: if no valid option is provided.
 parse_arguments() {
-    local no_cache=0
-
-    if [ "${2:-}" = "--no-cache" ] || [ "${2:-}" = "-n" ]; then
-        no_cache=1
-    fi
-
     case "${1:-}" in
         -s|--start)
             start_container
@@ -205,15 +263,21 @@ parse_arguments() {
             enter_container
             ;;
         -b|--build)
-            run_services "$no_cache"
+            parse_build_args "${@:2}" || exit 1
+            apply_build_profile "$BUILD_PROFILE" || exit 1
+            run_services "$BUILD_NO_CACHE"
             ;;
         --build-zed)
+            parse_build_args "${@:2}" || exit 1
+            apply_build_profile "$BUILD_PROFILE" || exit 1
             setup_x11
-            build_zed "$no_cache"
+            build_zed "$BUILD_NO_CACHE"
             ;;
         --build-loone)
+            parse_build_args "${@:2}" || exit 1
+            apply_build_profile "$BUILD_PROFILE" || exit 1
             setup_x11
-            build_loone "$no_cache"
+            build_loone "$BUILD_NO_CACHE"
             ;;
         -h|--help)
             show_help
