@@ -71,3 +71,7 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+    command: /bin/bash -c "echo \"building\ at $(pwd)\" &&
+      source /opt/ros/humble/setup.bash &&
+      source /root/Loon-E/install/setup.bash &&
+      ros2 launch loon_e_coms coms_launch.py"

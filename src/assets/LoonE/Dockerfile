@@ -78,8 +78,9 @@ RUN git clone --recurse-submodules https://github.com/HumberASV/Loon-E.git
 WORKDIR /root/Loon-E/
 RUN mkdir -p /root/Loon-E/src
 
-RUN /bin/bash -c "source /opt/ros/humble/setup.bash"
-
+RUN /bin/bash -c "colcon build --symlink-install \
+    && source /opt/ros/humble/setup.bash \
+    && source install/setup.bash"
 # -----------------------------
 # 4. NGC Assets & Final Setup
 # -----------------------------
