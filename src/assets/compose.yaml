@@ -19,6 +19,8 @@ services:
     tty: true
     environment:
       - DISPLAY=${DISPLAY:-}
+      - QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen}
+      - QT_X11_NO_MITSHM=1
       - NVIDIA_DRIVER_CAPABILITIES=all
       - LOGNAME=root
       - XAUTHORITY=/root/.Xauthority
@@ -49,7 +51,16 @@ services:
       /bin/bash -c "echo \"building\" &&
       source /opt/ros/humble/setup.bash &&
       source /root/ros2_ws/install/setup.bash &&
-      ros2 launch zed_wrapper zed_camera.launch.py camera_model:=zedx"
+      ros2 launch zed_wrapper zed_camera.launch.py
+      camera_model:=${ZED_CAMERA_MODEL:-zedx}
+      sim_mode:=${ZED_SIM_MODE:-true}
+      use_sim_time:=${ZED_USE_SIM_TIME:-true}
+      sim_address:=${ZED_SIM_ADDRESS:-100.68.31.22}
+      sim_port:=${ZED_SIM_PORT:-30000}
+      stream_port:=${ZED_STREAM_PORT:-5006}
+      stream_address:=${ZED_STREAM_ADDRESS:-100.102.48.55:5006}
+      enable_ipc:=false
+      param_overrides:=\"stream_server.stream_enabled:=true;debug.disable_nitros:=true;depth.depth_mode:=PERFORMANCE\""
 
   loone:
     image: ${LOON_E_IMAGE:-loon-e:latest}
@@ -68,6 +79,8 @@ services:
       - zed
     environment:
       - DISPLAY=${DISPLAY:-:1}
+      - QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen}
+      - QT_X11_NO_MITSHM=1
       - NVIDIA_DRIVER_CAPABILITIES=all
       - XAUTHORITY=/root/.Xauthority
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
