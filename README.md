@@ -8,21 +8,43 @@ Loon-Env provides installer, logging, and Docker wrapper scripts for the Loon-E 
 - Uses environment variables
 - Simplifies Docker and Docker Compose workflows for Loon-E and ZED-X
 
-## Global environment variables
+## Global Environment Variables
 
 
 | Name | Purpose |
 |---|---|
 | KNOWN_USERS_FILE | Path to the file tracking known users and their session counts. |
 | LOG_FILE | Path to the log file where session events are recorded. |
+| ASSET_DIR | Asset directory containing `compose.yaml` and Dockerfiles used by `LoonE`. |
 | LOON_E_IMAGE | Name of the Docker image to build for Loon-E (default: `loon-e:latest`) |
 | ZED_X_IMAGE | Name of the Docker image to build for ZED-X (default: `zed-x:latest`) |
 | LOON_ENV_VERSION | Installed Loon-Env version written by `install.bash`. |
-| XAUTHORITY | X11 auth file used for container GUI forwarding. |
+| XAUTHORITY | Host X11 auth file and compose mount source for GUI forwarding. |
+| DISPLAY | X11 display value forwarded into containers (default in compose: `:1`). |
+| QT_QPA_PLATFORM | Qt platform backend (default in compose: `offscreen`). |
+| ROS_DOMAIN_ID | ROS 2 DDS domain id used by both services (default in compose: `5`). |
+| ROS_LOCALHOST_ONLY | ROS 2 localhost-only toggle (default in compose: `0`). |
+| RMW_IMPLEMENTATION | ROS 2 middleware implementation (default in compose: `rmw_fastrtps_cpp`). |
+| ZED_DOCKERFILE | Optional override for ZED Dockerfile path in compose. |
 | ZED_WRAPPER_REPO | Optional Git repo used when building the ZED wrapper image. |
 | ZED_WRAPPER_GIT_REF | Optional branch, tag, or commit for the ZED wrapper repo. |
 | ZED_EXAMPLES_REPO | Optional Git repo used when building ZED examples. |
 | ZED_EXAMPLES_GIT_REF | Optional branch, tag, or commit for the ZED examples repo. |
+| ZED_CAMERA_MODEL | ZED launch camera model (default in compose: `zedx`). |
+| ZED_SIM_MODE | ZED launch simulation mode toggle (default in compose: `true`). |
+| ZED_USE_SIM_TIME | ZED launch simulated time toggle (default in compose: `true`). |
+| ZED_SIM_ADDRESS | ZED simulator address (default in compose: `100.68.31.22`). |
+| ZED_SIM_PORT | ZED simulator port (default in compose: `30000`). |
+| ZED_STREAM_PORT | ZED stream server port (default in compose: `5006`). |
+| ZED_STREAM_ADDRESS | ZED stream bind address (default in compose: `0.0.0.0`). |
+| ZED_ENABLE_IPC | ZED launch IPC toggle (default in compose: `true`). |
+| ZED_STREAM_ENABLED | ZED stream server enable toggle (default in compose: `true`). |
+| ZED_DISABLE_NITROS | Disable Nitros acceleration when `true` (default in compose: `false`). |
+| LOONE_DOCKERFILE | Optional override for Loon-E Dockerfile path in compose. |
+| LOONE_REPO | Optional Git repo used when building the Loon-E image. |
+| LOONE_GIT_REF | Optional branch, tag, or commit for the Loon-E repo. |
+
+For full compose variable details, see `wiki/compose.md`.
 
 ---
 
@@ -56,6 +78,9 @@ Loon-Env provides installer, logging, and Docker wrapper scripts for the Loon-E 
 Supported options:
 
 - `-b`, `--build`: starts the ZED-X and Loon-E compose services.
+- `--build-zed`: builds only the ZED service image.
+- `--build-loone`: builds only the Loon-E service image.
+- `-n`, `--no-cache`: disables Docker build cache when used with build flags.
 - `-e`, `--enter`: enters a running container by image/container name.
 - `-h`, `--help`: prints usage.
 - `-q`, `--quack`: prints `Quack!`.
@@ -76,6 +101,7 @@ The command also prepares X11 access for container entry and compose launches.
 
 - See `wiki/LoonE.md` for command behavior and examples.
 - See `wiki/Setup.md` for shell hook and `~/.bashrc` requirements.
+- See `wiki/compose.md` for complete compose variable definitions and defaults.
 
 ## Notes
 

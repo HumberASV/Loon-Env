@@ -18,7 +18,16 @@ LoonE [OPTION] [IMAGE_NAME]
 ## Options
 
 - `-b`, `--build`
-  Starts the compose stack defined by the installed asset directory.
+  Builds `zed` and `loone`, then starts/recreates the compose stack.
+
+- `--build-zed`
+  Builds only the `zed` service image.
+
+- `--build-loone`
+  Builds only the `loone` service image.
+
+- `-n`, `--no-cache`
+  Use Docker build without cache. Supported with `--build`, `--build-zed`, and `--build-loone` as the second argument.
 
 - `-e`, `--enter`
   Opens an interactive shell in a running container whose name matches the chosen image name.
@@ -44,13 +53,16 @@ LoonE [OPTION] [IMAGE_NAME]
   Location of installed assets, including `compose.yaml` and Dockerfiles.
 
 - `DOCKERFILE`
-  Override for the Dockerfile path used by the script.
+  Declared by the script, but not currently used by compose operations.
 
 - `DISPLAY`
   X11 display to forward into containers.
 
 - `XAUTHORITY`
-  X11 authentication file used when preparing GUI access.
+  X11 authentication file used when preparing GUI access. During setup, this may be replaced with `/tmp/.docker.xauth` if `xauth` is available.
+
+- Compose pass-through variables
+  Any variables documented in `wiki/compose.md` (for example `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION`, `ZED_*`, `LOONE_*`) can be exported before running `LoonE` and will be consumed by `docker compose`.
 
 ## Examples
 
@@ -58,6 +70,18 @@ Build and start the stack:
 
 ```bash
 LoonE -b
+```
+
+Build and start without cache:
+
+```bash
+LoonE -b --no-cache
+```
+
+Build only ZED:
+
+```bash
+LoonE --build-zed
 ```
 
 Enter a running container:
@@ -76,6 +100,7 @@ LoonE -b
 
 ## Notes
 
-- `LoonE -b` calls `docker compose -f "$ASSET_DIR/compose.yaml" up -d`.
+- `LoonE -b` builds both services first, then calls `docker compose -f "$ASSET_DIR/compose.yaml" up -d --force-recreate`.
 - The command grants local X access to `root` and `docker` before starting containers.
 - If `xauth` is available, the script creates `/tmp/.docker.xauth` for container GUI access.
+- Compose variable details are documented in `wiki/compose.md`.

@@ -43,7 +43,10 @@ ASSET_DIR="${ASSET_DIR:-/usr/share/Loon-Env}"
 DOCKERFILE="${DOCKERFILE:-$ASSET_DIR/LoonE/Dockerfile}"
 
 #---------------------- FUNCTIONS ------------------
-# Provide help information and exit
+# Display command usage and option help text.
+# Version: 2.0.0
+# Returns:
+#   None: if help text is printed successfully.
 show_help(){
         cat <<'EOF'
 Usage: LoonE [IMAGE_NAME]
@@ -57,15 +60,19 @@ IMAGE_NAME   optional image name (default: setup_img)
 -s, --start  start the Docker container if it's not running
 -e, --enter  enter the Docker container
 -b, --build   build and run services
+    --build-zed    build only the zed service
+    --build-loone  build only the loone service
+-n, --no-cache    build images without Docker build cache (use with build flags)
 -q, --quack   what does this do? Try it and find out!
 -v, --version   show version information and exit
 EOF
 }
 
-# Function to check if container is running; it's stupid but readable
+# Check whether the target container is currently running.
+# Version: 2.0.0
 # Returns:
-#   0 if running
-#   1 if not running
+#   0: if the container is running.
+#   1: if the container is not running.
 is_container_running() {
     if docker ps --filter "name=^/${IMAGE_NAME}$" --filter "status=running" --format '{{.Names}}' | grep -xq "${IMAGE_NAME}"; then
         return 0 # Running
@@ -74,11 +81,11 @@ is_container_running() {
     fi
 }
 
-# Function to check if image is built
-# also stupid but readable
+# Check whether the target Docker image exists locally.
+# Version: 2.0.0
 # Returns:
-#   0 if image exists
-#   1 if image does not exist
+#   0: if the image exists.
+#   1: if the image does not exist.
 is_image_built() {
     if docker image inspect "$IMAGE_NAME" &> /dev/null; then
         return 0 # Image exists
@@ -87,7 +94,11 @@ is_image_built() {
     fi
 }
 
-# function to enter the container if it's not running
+# Enter an interactive shell inside the running target container.
+# Version: 2.0.0
+# Returns:
+#   0: if container shell is entered and exits normally.
+#   1: if the container is not running or does not exist.
 enter_container() {
     xhost +local:root
     xhost +local:docker
@@ -102,8 +113,8 @@ enter_container() {
     docker exec -it "$IMAGE_NAME" bash 
 }
 
-# This function will compose both the Zedx and Loon-E ros containers
-run_services() {
+# Configure display and xauth before compose commands.
+setup_x11() {
     export DISPLAY="${DISPLAY:-:1}"
     local host_xauth="${XAUTHORITY:-$HOME/.Xauthority}"
     local docker_xauth="/tmp/.docker.xauth"
@@ -123,14 +134,69 @@ run_services() {
 
     DISPLAY="$DISPLAY" xhost +local:root
     DISPLAY="$DISPLAY" xhost +local:docker
-    echo Building zed and loone containers...
-    docker compose -f "$ASSET_DIR/compose.yaml" up -d
 }
 
-# Function to parse command-line arguments
+# Build only the zed service.
+# Parameters:
+#   $1 (optional): 1 to enable --no-cache, 0 otherwise.
+build_zed() {
+    local no_cache="${1:-0}"
+    local compose_file="$ASSET_DIR/compose.yaml"
+
+    echo Building zed container...
+    if [ "$no_cache" -eq 1 ]; then
+        docker compose -f "$compose_file" build --no-cache zed
+    else
+        docker compose -f "$compose_file" build zed
+    fi
+}
+
+# Build only the loone service.
+# Parameters:
+#   $1 (optional): 1 to enable --no-cache, 0 otherwise.
+build_loone() {
+    local no_cache="${1:-0}"
+    local compose_file="$ASSET_DIR/compose.yaml"
+
+    echo Building loone container...
+    if [ "$no_cache" -eq 1 ]; then
+        docker compose -f "$compose_file" build --no-cache loone
+    else
+        docker compose -f "$compose_file" build loone
+    fi
+}
+
+# Build and start the Docker Compose services for Zedx and Loon-E.
+# Parameters:
+#   $1 (optional): 1 to enable --no-cache, 0 otherwise.
+# Returns:
+#   0: if compose build and startup complete successfully.
+#   non-zero: if Docker Compose commands fail.
+run_services() {
+    local no_cache="${1:-0}"
+    local compose_file="$ASSET_DIR/compose.yaml"
+
+    setup_x11
+    echo Building zed and loone containers...
+    build_zed "$no_cache" || return 1
+    build_loone "$no_cache" || return 1
+    docker compose -f "$compose_file" up -d --force-recreate
+}
+
+# Parse the first CLI option and dispatch the matching command handler.
+# Version: 2.0.0
+# Parameters:
+#   $1 (optional): command option flag to execute (default: none).
+# Returns:
+#   0: if the selected command completes successfully.
+#   1: if no valid option is provided.
 parse_arguments() {
-    local user=$(whoami)
-    local pid=$$
+    local no_cache=0
+
+    if [ "${2:-}" = "--no-cache" ] || [ "${2:-}" = "-n" ]; then
+        no_cache=1
+    fi
+
     case "${1:-}" in
         -s|--start)
             start_container
@@ -139,7 +205,15 @@ parse_arguments() {
             enter_container
             ;;
         -b|--build)
-            run_services
+            run_services "$no_cache"
+            ;;
+        --build-zed)
+            setup_x11
+            build_zed "$no_cache"
+            ;;
+        --build-loone)
+            setup_x11
+            build_loone "$no_cache"
             ;;
         -h|--help)
             show_help

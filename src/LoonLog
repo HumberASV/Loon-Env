@@ -35,23 +35,10 @@
 
 MAX_LOG_SIZE=$((5 * 1024 * 1024)) 
 
-# Do not let logging if log file doesn't exist
-if [ -z "$LOG_FILE" ]; then
-    echo "[LoonLog] Error: Log file enviroment doesn't exist" >&2
-    echo "Please set the LOG_FILE environment variable to a valid file path." >&2
-    exit 1
-fi
-
 LOG_FILE="${LOG_FILE:-log.txt}"
 
-# The file to store known users. Each line is in the format "username:PID".
+# The file to store known users. Each line is in the format "user:given_name:terminal_count:message".
 KNOWN_USERS_FILE="${KNOWN_USERS_FILE:-known_users.txt}"
-
-if [ -z "$KNOWN_USERS_FILE" ]; then
-    echo "[LoonLog] Error: Known users file enviroment doesn't exist" >&2
-    echo "Please set the KNOWN_USERS_FILE environment variable to a valid file path." >&2
-    exit 1
-fi
 
 DEFAULT_USER="robo" # Change this to whatever you set your default user is.
 
@@ -80,12 +67,42 @@ touch "$LOG_FILE"
 #   message - the message the user will display as a "wall" warning message (optional best left empty)
 create_user() {
     # Parameter definition
-    local user="{$1:-"$DEFAULT_USER"}"
-    local given_name="{$2:-"$DEFAULT_USER"}"
+    local user="${1:-$DEFAULT_USER}"
+    local given_name="${2:-$DEFAULT_USER}"
     local terminal_count="${3:-1}" # Default to 1 terminal if not provided
-    local message="${4:-""}" # Default to no message if not provided
+    local message="${4:-}" # Default to no message if not provided
 
-    echo "$username:$terminal_count:$message" >> "$KNOWN_USERS_FILE"
+    echo "$user:$given_name:$terminal_count:$message" >> "$KNOWN_USERS_FILE"
+}
+
+# Function to add or update a user in KNOWN_USERS_FILE.
+# If the user exists, terminal_count is incremented by the provided amount.
+add_user() {
+    local user="${1:-$DEFAULT_USER}"
+    local given_name="${2:-$user}"
+    local terminal_count="${3:-1}"
+    local message="${4:-}"
+
+    if ! [[ "$terminal_count" =~ ^-?[0-9]+$ ]]; then
+        echo "add_user: terminal_count must be an integer" >&2
+        return 1
+    fi
+
+    local user_line
+    user_line=$(read_user "$user")
+    if [ -n "$user_line" ]; then
+        local current_count
+        current_count=$(echo "$user_line" | cut -d: -f3)
+        if ! [[ "$current_count" =~ ^-?[0-9]+$ ]]; then
+            echo "add_user: existing terminal_count for '$user' is invalid" >&2
+            return 1
+        fi
+
+        update_user "$user" "$user" "$given_name" "$((current_count + terminal_count))" "$message"
+        return $?
+    fi
+
+    create_user "$user" "$given_name" "$terminal_count" "$message"
 }
 
 # Function to find and output matching line in KNOWN_USERS_FILE
@@ -248,13 +265,15 @@ update_session() {
         return 1
     fi
 
-    if [ "$terminal_count" -le "$amount" ]; then
+    local new_terminal_count=$((terminal_count + amount))
+
+    if [ "$new_terminal_count" -le 0 ]; then
         delete_user "$username"
         return $?
     fi
 
     # if can decrement without going to 0, then just decrement
-    update_user "$username" "" "" $((terminal_count + amount)) ""
+    update_user "$username" "" "" "$new_terminal_count" ""
     return $?
 }
 
@@ -274,12 +293,47 @@ update_warning() {
         return 1
     fi
 
-    if [ -z "$warn_msg" ]; then
-        echo "update_warning: warn_msg is required" >&2
+    if [[ "$warn_msg" == *":"* ]]; then
+        echo "update_warning: warn_msg cannot contain ':'" >&2
         return 1
     fi
 
-    update_user "$username" "" "" "" "$warn_msg"
+    if [[ "$warn_msg" == *$'\n'* ]]; then
+        echo "update_warning: warn_msg cannot contain newlines" >&2
+        return 1
+    fi
+
+    local temp_file
+    temp_file=$(mktemp)
+
+    awk -F: -v OFS=":" -v username="$username" -v warn_msg="$warn_msg" '
+        BEGIN { updated=0 }
+        ($1 == username || $2 == username) && updated == 0 {
+            updated=1
+            print $1, $2, $3, warn_msg
+            next
+        }
+        { print }
+        END {
+            if (updated == 0) {
+                exit 2
+            }
+        }
+    ' "$KNOWN_USERS_FILE" > "$temp_file"
+
+    case $? in
+        0)
+            mv "$temp_file" "$KNOWN_USERS_FILE"
+            ;;
+        2)
+            rm -f "$temp_file"
+            return 1
+            ;;
+        *)
+            rm -f "$temp_file"
+            return 1
+            ;;
+    esac
 }
 
 # Returns the warning message of specified user
@@ -289,8 +343,15 @@ update_warning() {
 #  the warning message of the user, or empty string if not found or no message set
 get_warning() {
     local user="$1"
-    local warn_msg= $(read_user "$user" | cut -d: -f4)
-    return "$warn_msg"
+    local user_line
+    user_line=$(read_user "$user")
+
+    if [ -z "$user_line" ]; then
+        return 1
+    fi
+
+    echo "$user_line" | cut -d: -f4-
+    return 0
 }
 
 # Complex set of defensive loops to add warning message to specified user
@@ -301,8 +362,9 @@ get_warning() {
 #  0 if user was found, and/or updated (returns 0 if not updated but user was found)
 #  1 if user was not found or error occurred
 add_warning() {
-    user="$1"
-    warn_msg="${2:-}" # Optional second argument for the warning message, but we'll prompt if it's not provided
+    local user="$1"
+    local warn_msg="${2:-}" # Optional second argument for the warning message, but we'll prompt if it's not provided
+    local warning
     warning=$(get_warning "$user")
     if [ -n "$warning" ]; then
         echo "User $user already has a warning message set: $warning"
@@ -327,9 +389,7 @@ add_warning() {
             read -p "Are you sure you want to set the warning message to '$warn_msg'? (y/n) " confirm
             if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
                 echo "Setting warning message to '$warn_msg'"
-                local result
-                result=$(update_warning "$user" "$warn_msg")
-                if [ $? -ne 0 ]; then
+                if ! update_warning "$user" "$warn_msg"; then
                     echo "Failed to set warning message for user $user" >&2
                     return 1
                 fi
@@ -352,10 +412,15 @@ add_warning() {
 # Returns:
 #  0 if user was found and warning message removed, 1 if user was not found or error occurred
 remove_warning() {
+    local user="$1"
+
+    if [ -z "$user" ]; then
+        echo "remove_warning: username is required" >&2
+        return 1
+    fi
+
     echo "Removing warning message for user $user"
-    local result
-    result=$(update_warning "$user" "")
-    if [ $? -ne 0 ]; then
+    if ! update_warning "$user" ""; then
         echo "Failed to remove warning message for user $user" >&2
         return 1
     fi
@@ -372,55 +437,60 @@ remove_warning() {
 # returns:
 #   0 if user was successfully obtained and added to $KNOWN_USERS_FILE, 1 if an error occurred
 get_user() {
-    local user=$(whoami)
+    local prompt_for_robo="${1:-1}"
+    local given_name=""
+
+    user=$(whoami)
     if [ "$DEFAULT_USER" == "$user" ]; then
-        echo "Loon-E is blind and can't tell who you are"
-        echo "Login with your username or ask a sysadmin to add you"
+        if [ "$prompt_for_robo" -eq 1 ]; then
+            echo "Loon-E is blind and can't tell who you are"
+            echo "Login with your username or ask a sysadmin to add you"
 
-        while true; do
-            read -p "What is your name: " user
+            while true; do
+                read -p "What is your name: " given_name
 
-            if [ -z "$user" ]; then
-                echo "Name cannot be empty. Please enter your name."
-                continue
-            fi
+                if [ -z "$given_name" ]; then
+                    echo "Name cannot be empty. Please enter your name."
+                    continue
+                fi
 
-            if command -v "$user" >/dev/null 2>&1; then
-                echo "The name '$user' is a command name. Please choose a different username."
-                continue
-            fi
+                if command -v "$given_name" >/dev/null 2>&1; then
+                    echo "The name '$given_name' is a command name. Please choose a different username."
+                    continue
+                fi
 
-            if grep -qF "$user:" "$KNOWN_USERS_FILE"; then
-                echo "The name '$user' is already registered. Please enter a different name."
-                continue
-            fi
+                if awk -F: -v user="$DEFAULT_USER" -v given_name="$given_name" '$1 == user && $2 == given_name { found=1; exit } END { exit !found }' "$KNOWN_USERS_FILE"; then
+                    echo "The name '$given_name' is already registered. Please enter a different name."
+                    continue
+                fi
 
-            if [[ "$user" == *":"* ]]; then
-                echo "Name cannot contain colons. Please enter a name without colons."
-                continue
-            fi
+                if [[ "$given_name" == *":"* ]]; then
+                    echo "Name cannot contain colons. Please enter a name without colons."
+                    continue
+                fi
 
-            if [[ "$user" == *$'\n'* ]]; then
-                echo "Name cannot contain newlines. Please enter a name without newlines."
-                continue
-            fi
+                if [[ "$given_name" == *$'\n'* ]]; then
+                    echo "Name cannot contain newlines. Please enter a name without newlines."
+                    continue
+                fi
 
-            result=$(add_user "$DEFAULT_USER" "$user")
-            if [ $? -ne 0 ]; then
-                echo "Failed to add user '$user' to $KNOWN_USERS_FILE" >&2
-                return 1
-            fi
-            break;
-        done
+                break
+            done
+        else
+            given_name="$DEFAULT_USER"
+        fi
+
+        if ! add_user "$DEFAULT_USER" "$given_name"; then
+            echo "Failed to add user '$DEFAULT_USER' to $KNOWN_USERS_FILE" >&2
+            return 1
+        fi
+    else
+        if ! add_user "$user" "$user"; then
+            echo "Failed to add user '$user' to $KNOWN_USERS_FILE" >&2
+            return 1
+        fi
     fi
-    # Writting every time a new terminal opens is a bit excessive
-    # but it ensures we have a record of all users that have ever logged in, even if they are "robo" users.
-    # See the LoonExit Script for bash logout
-    result=$(add_user "$user")
-    if [ $? -ne 0 ]; then
-        echo "Failed to add user '$user' to $KNOWN_USERS_FILE" >&2
-        return 1
-    fi
+
     echo "Saved '$user' to $KNOWN_USERS_FILE"
     echo "Welcome Aboard $user!"
 }
@@ -461,7 +531,7 @@ is_ssh() {
 # Prints all warnings in $KNOWN_USERS_FILE to the terminal
 # Mentions each user that has a warning message set, and prints the warning message
 print_warnings(){
-    for user in $(awk -F: '$4 != "" {print $1}' "$KNOWN_USERS_FILE"); do
+    for user in $(awk -F: '$4 != "" {print $1}' "$KNOWN_USERS_FILE" | sort -u); do
         warn_msg=$(get_warning "$user")
         if [ -n "$warn_msg" ]; then
             echo "Warning from $user: $warn_msg"
@@ -471,14 +541,9 @@ print_warnings(){
 
 # Function to list known users and currently online users
 list_all() {
-    # Ensure current user is logged to KNOWN_USERS_FILE
-    if ! grep -qF "$user:" "$KNOWN_USERS_FILE" 2>/dev/null; then
-        echo "$user:$$" >> "$KNOWN_USERS_FILE"
-    fi
-
     echo "All known users (from $KNOWN_USERS_FILE):"
     if [ -f "$KNOWN_USERS_FILE" ]; then
-        awk 'NF' "$KNOWN_USERS_FILE" | sort -u | awk -F: '{printf "  %s (PID: %s)\n", $1, $2}'
+        awk -F: 'NF {printf "  %s (given_name: %s, terminals: %s)\n", $1, $2, $3}' "$KNOWN_USERS_FILE" | sort -u
     else
         echo "  (none)"
     fi
@@ -494,7 +559,7 @@ manage_log() {
 
     list_all
     echo "$user is recognized as sysadmin and $LOG_FILE is $log_size bytes (>=75% of $MAX_LOG_SIZE)."
-    PS3='Choose an action for $LOG_FILE: '
+    PS3="Choose an action for $LOG_FILE: "
     options=("Backup" "Clear" "Skip")
     if is_ssh; then
         options+=("Download")
@@ -535,15 +600,21 @@ manage_log() {
 
 # Function to log the user session, processes, and check for Docker daemon
 log_session() {
+    local session_data
+    local processes
+    local session_users
+    local docker_count
+
     session_data=$(w)
     processes=$(ps -e)
+    session_users=$(w -h | wc -l)
 
     # Log the session data and processes to the log file
     echo "$user: Opened a terminal" >> "$LOG_FILE"
     echo "$session_data" >> "$LOG_FILE"
 
     # Welcome message with user count and terminal count
-    echo "Including you, there are $(tail -n -1 <<< "$session_data" | wc -l) users online!"
+    echo "Including you, there are $session_users users online!"
     list_all
     print_warnings
 
@@ -601,9 +672,15 @@ handle_login() {
 
 # Function to handle logout
 handle_logout() {
-    get_user
-    update_session "$user" "-1" # Decrement terminal count by 1, and remove user if terminal count goes to 0
-    echo "User $user (PID: $pid) logged out" >> "$LOG_FILE"
+    # Logout must stay non-interactive.
+    user=$(whoami)
+
+    if ! update_session "$user" "-1"; then
+        echo "User $user was not tracked in $KNOWN_USERS_FILE" >&2
+        return 1
+    fi
+
+    echo "User $user logged out" >> "$LOG_FILE"
     echo "Goodbye $user!"
 }
 

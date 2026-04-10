@@ -43,13 +43,38 @@ The installer writes `~/.loon-e-env` with exports such as:
 - `ZED_X_IMAGE`
 - `LOON_ENV_VERSION`
 - `XAUTHORITY`
+- `ASSET_DIR`
 
-Additional build-time overrides can also be exported there if desired, for example:
+Additional compose and build overrides can also be exported there if desired, for example:
 
+- `ZED_DOCKERFILE`
 - `ZED_WRAPPER_REPO`
 - `ZED_WRAPPER_GIT_REF`
 - `ZED_EXAMPLES_REPO`
 - `ZED_EXAMPLES_GIT_REF`
+- `LOONE_DOCKERFILE`
+- `LOONE_REPO`
+- `LOONE_GIT_REF`
+
+Runtime overrides commonly set there include:
+
+- `DISPLAY`
+- `QT_QPA_PLATFORM`
+- `ROS_DOMAIN_ID`
+- `ROS_LOCALHOST_ONLY`
+- `RMW_IMPLEMENTATION`
+- `ZED_CAMERA_MODEL`
+- `ZED_SIM_MODE`
+- `ZED_USE_SIM_TIME`
+- `ZED_SIM_ADDRESS`
+- `ZED_SIM_PORT`
+- `ZED_STREAM_PORT`
+- `ZED_STREAM_ADDRESS`
+- `ZED_ENABLE_IPC`
+- `ZED_STREAM_ENABLED`
+- `ZED_DISABLE_NITROS`
+
+For complete descriptions and defaults, see `wiki/compose.md`.
 
 ## Installation Requirements
 
