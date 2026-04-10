@@ -80,6 +80,7 @@ Supported options:
 - `-b`, `--build`: builds both services and starts the compose stack; accepts optional profile argument `virtual` or `zedx`.
 - `--build-zed`: builds only the ZED service image; accepts optional profile argument `virtual` or `zedx`.
 - `--build-loone`: builds only the Loon-E service image; accepts optional profile argument `virtual` or `zedx`.
+- `--stop [SERVICE ...]`: stops compose services; supported targets are `zed`, `loone`, and `all` (defaults to both `zed` and `loone`).
 - `-n`, `--no-cache`: disables Docker build cache when used with build flags.
 - `-e`, `--enter`: enters a running container by image/container name.
 - `-h`, `--help`: prints usage.

@@ -35,6 +35,10 @@ LoonE [OPTION] [IMAGE_NAME]
 - `-e`, `--enter`
   Opens an interactive shell in a running container whose name matches the chosen image name.
 
+- `--stop [SERVICE ...]`
+  Stops compose services. Supported targets: `zed`, `loone`, `all`.
+  If no service is provided, both `zed` and `loone` are stopped.
+
 - `-h`, `--help`
   Prints help text.
 
@@ -102,6 +106,18 @@ Build only ZED:
 
 ```bash
 LoonE --build-zed
+```
+
+Stop both services:
+
+```bash
+LoonE --stop
+```
+
+Stop only ZED:
+
+```bash
+LoonE --stop zed
 ```
 
 Enter a running container:
