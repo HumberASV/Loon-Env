@@ -2,7 +2,7 @@
 
 ## Description
 
-Loon-Env provides installer, logging, and Docker wrapper scripts for the Loon-E stack.
+Loon-Env provides installer, logging, and Docker wrapper scripts for the Loon-E stack. It's not very good, but it works for those who want it.
 
 - Tracks users online
 - Uses environment variables
