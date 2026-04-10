@@ -21,6 +21,9 @@
 
 FROM nvcr.io/nvidia/isaac/ros:aarch64-ros2_humble_4c0c55dddd2bbcc3e8d5f9753bee634c
 
+ARG LOONE_REPO=https://github.com/HumberASV/Loon-E.git
+ARG LOONE_GIT_REF=main
+
 # -----------------------------
 # 0. Jetson APT keyring bootstrap
 # -----------------------------
@@ -50,7 +53,6 @@ RUN echo "run" && \
     ros-humble-isaac-ros-yolov8 \
     ros-humble-isaac-ros-dnn-image-encoder \
     ros-humble-isaac-ros-tensor-rt \
-    ros-humble-rmw-cyclonedds-cpp \
     ros-humble-ament-cmake-clang-format \
     time \
     ros-humble-depthimage-to-laserscan \
@@ -72,7 +74,12 @@ RUN python3 -m pip install --no-cache-dir numpy
 # -----------------------------
 WORKDIR /root/
 
-RUN git clone --recurse-submodules https://github.com/HumberASV/Loon-E.git
+RUN echo "Using Loon-E ref: ${LOONE_GIT_REF}" && \
+    git clone --recurse-submodules "${LOONE_REPO}" Loon-E && \
+    cd /root/Loon-E && \
+    git fetch --all --tags && \
+    git checkout "${LOONE_GIT_REF}" && \
+    git submodule update --init --recursive
 
 # This may fail if the clone didn't work
 WORKDIR /root/Loon-E/
@@ -99,7 +106,9 @@ RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
     ln -sf /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 /usr/lib/aarch64-linux-gnu/libv4l2.so || true
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "test -f /root/Loon-E/install/setup.bash && source /root/Loon-E/install/setup.bash" >> /root/.bashrc
+    echo "test -f /root/Loon-E/install/setup.bash && source /root/Loon-E/install/setup.bash" >> /root/.bashrc && \
+    echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /root/.bashrc && \
+    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}" >> /root/.bashrc
 
 
 WORKDIR /root/Loon-E

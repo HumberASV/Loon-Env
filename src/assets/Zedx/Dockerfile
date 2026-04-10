@@ -25,10 +25,14 @@
 
 FROM nvcr.io/nvidia/isaac/ros:aarch64-ros2_humble_4c0c55dddd2bbcc3e8d5f9753bee634c
 
+ARG ZED_WRAPPER_REPO=https://github.com/HumberASV/zed-ros2-wrapper.git
+ARG ZED_WRAPPER_GIT_REF=main
+ARG ZED_EXAMPLES_REPO=https://github.com/stereolabs/zed-ros2-examples.git
+ARG ZED_EXAMPLES_GIT_REF=main
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CMAKE_PREFIX_PATH="/usr/local/zed:$CMAKE_PREFIX_PATH"
 ENV ZED_DIR="/usr/local/zed"
-ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 # -----------------------------
 # 0. Jetson APT keyring bootstrap
@@ -59,7 +63,6 @@ RUN echo "run" && \
     ros-humble-isaac-ros-yolov8 \
     ros-humble-isaac-ros-dnn-image-encoder \
     ros-humble-isaac-ros-tensor-rt \
-    ros-humble-rmw-cyclonedds-cpp \
     ros-humble-ament-cmake-clang-format \
     time \
     ros-humble-depthimage-to-laserscan \
@@ -87,10 +90,20 @@ WORKDIR /root/ros2_ws/
 # -----------------------------
 
 # Install wrapper for camera
-RUN git clone --recurse-submodules https://github.com/stereolabs/zed-ros2-wrapper.git src/zed-ros2-wrapper
+RUN echo "Using zed-ros2-wrapper ref: ${ZED_WRAPPER_GIT_REF}" && \
+    git clone --recurse-submodules "${ZED_WRAPPER_REPO}" src/zed-ros2-wrapper && \
+    cd src/zed-ros2-wrapper && \
+    git fetch --all --tags && \
+    git checkout "${ZED_WRAPPER_GIT_REF}" && \
+    git submodule update --init --recursive
 
 # (Optional) Install examples for wrapper
-RUN git clone --recurse-submodules https://github.com/stereolabs/zed-ros2-examples.git src/zed-ros2-examples
+RUN echo "Using zed-ros2-examples ref: ${ZED_EXAMPLES_GIT_REF}" && \
+    git clone --recurse-submodules "${ZED_EXAMPLES_REPO}" src/zed-ros2-examples && \
+    cd src/zed-ros2-examples && \
+    git fetch --all --tags && \
+    git checkout "${ZED_EXAMPLES_GIT_REF}" && \
+    git submodule update --init --recursive
 
 # -----------------------------
 # 5. Build ROS workspace
@@ -133,6 +146,8 @@ RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
     ln -sf /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 /usr/lib/aarch64-linux-gnu/libv4l2.so || true
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "test -f /root/ros2_ws/install/setup.bash && source /root/ros2_ws/install/setup.bash" >> /root/.bashrc
+    echo "test -f /root/ros2_ws/install/setup.bash && source /root/ros2_ws/install/setup.bash" >> /root/.bashrc && \
+    echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /root/.bashrc && \
+    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}" >> /root/.bashrc
 
 WORKDIR /root/ros2_ws

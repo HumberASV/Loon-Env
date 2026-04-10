@@ -5,20 +5,32 @@ services:
     build:
       context: .
       dockerfile: ${ZED_DOCKERFILE:-Zedx/Dockerfile}
+      args:
+        - ZED_WRAPPER_REPO=${ZED_WRAPPER_REPO:-https://github.com/HumberASV/zed-ros2-wrapper.git}
+        - ZED_WRAPPER_GIT_REF=${ZED_WRAPPER_GIT_REF:-main}
+        - ZED_EXAMPLES_REPO=${ZED_EXAMPLES_REPO:-https://github.com/stereolabs/zed-ros2-examples.git}
+        - ZED_EXAMPLES_GIT_REF=${ZED_EXAMPLES_GIT_REF:-main}
     runtime: nvidia
     privileged: true
     network_mode: host
+    pid: host
+    ipc: host
     stdin_open: true
     tty: true
     environment:
-      - DISPLAY=${DISPLAY:-:1}
+      - DISPLAY=${DISPLAY:-}
       - NVIDIA_DRIVER_CAPABILITIES=all
+      - LOGNAME=root
       - XAUTHORITY=/root/.Xauthority
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
-      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
     volumes:
-      - ${XAUTHORITY:-/tmp/.docker.xauth}:/root/.Xauthority:ro
+      - ${XAUTHORITY:-/home/robo/.Xauthority}:/root/.Xauthority:ro
+      - /tmp/argus_socket:/tmp/argus_socket
+      - /tmp:/tmp
+      - /etc/systemd/system:/etc/systemd/system:ro
+      - /dev:/dev # This is needed to allow access to the camera and gpu devices, but it also allows access to all other devices which is a security risk. In the future we should switch to using device cgroups to only allow access to the specific devices we need.
       - /dev/video0:/dev/video0
       - /dev/bus/usb:/dev/bus/usb
       - /dev/nvhost-ctrl:/dev/nvhost-ctrl
@@ -29,9 +41,9 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/
       - /var/nvidia/nvcam/status/:/var/nvidia/nvcam/status/
-      - /etc/systemd/system/zed_x_daemon.service:/etc/systemd/system/zed_x_daemon.service
       - /var/run/docker.sock:/var/run/docker.sock
-      - /home/robo/zed_docker_ai/:/usr/local/zed/resources/
+      - /usr/local/zed/settings/:/usr/local/zed/settings/
+      - /usr/local/zed/resources/:/usr/local/zed/resources/
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
     command: >-
       /bin/bash -c "echo \"building\" &&
@@ -44,6 +56,9 @@ services:
     build:
       context: .
       dockerfile: ${LOONE_DOCKERFILE:-LoonE/Dockerfile}
+      args:
+        - LOONE_REPO=${LOONE_REPO:-https://github.com/HumberASV/Loon-E.git}
+        - LOONE_GIT_REF=${LOONE_GIT_REF:-main}
     runtime: nvidia
     privileged: true
     network_mode: host
@@ -57,7 +72,7 @@ services:
       - XAUTHORITY=/root/.Xauthority
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
-      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - /dev:/dev
