@@ -7,9 +7,9 @@ services:
       dockerfile: ${ZED_DOCKERFILE:-Zedx/Dockerfile}
       args:
         - ZED_WRAPPER_REPO=${ZED_WRAPPER_REPO:-https://github.com/HumberASV/zed-ros2-wrapper.git}
-        - ZED_WRAPPER_GIT_REF=${ZED_WRAPPER_GIT_REF:-main}
+        - ZED_WRAPPER_GIT_REF=${ZED_WRAPPER_GIT_REF:-master}
         - ZED_EXAMPLES_REPO=${ZED_EXAMPLES_REPO:-https://github.com/stereolabs/zed-ros2-examples.git}
-        - ZED_EXAMPLES_GIT_REF=${ZED_EXAMPLES_GIT_REF:-main}
+        - ZED_EXAMPLES_GIT_REF=${ZED_EXAMPLES_GIT_REF:-master}
     runtime: nvidia
     privileged: true
     network_mode: host

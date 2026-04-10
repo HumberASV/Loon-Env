@@ -26,9 +26,9 @@
 FROM nvcr.io/nvidia/isaac/ros:aarch64-ros2_humble_4c0c55dddd2bbcc3e8d5f9753bee634c
 
 ARG ZED_WRAPPER_REPO=https://github.com/HumberASV/zed-ros2-wrapper.git
-ARG ZED_WRAPPER_GIT_REF=main
+ARG ZED_WRAPPER_GIT_REF=master
 ARG ZED_EXAMPLES_REPO=https://github.com/stereolabs/zed-ros2-examples.git
-ARG ZED_EXAMPLES_GIT_REF=main
+ARG ZED_EXAMPLES_GIT_REF=master
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CMAKE_PREFIX_PATH="/usr/local/zed:$CMAKE_PREFIX_PATH"
