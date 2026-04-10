@@ -58,9 +58,9 @@ services:
       sim_address:=${ZED_SIM_ADDRESS:-100.68.31.22}
       sim_port:=${ZED_SIM_PORT:-30000}
       stream_port:=${ZED_STREAM_PORT:-5006}
-      stream_address:=${ZED_STREAM_ADDRESS:-100.102.48.55:5006}
+      stream_address:=${ZED_STREAM_ADDRESS:-}
       enable_ipc:=false
-      param_overrides:=\"stream_server.stream_enabled:=true;debug.disable_nitros:=true;depth.depth_mode:=PERFORMANCE\""
+      param_overrides:=\"stream_server.stream_enabled:=true;stream_server.port:=${ZED_STREAM_PORT:-5006};debug.disable_nitros:=true;depth.depth_mode:=PERFORMANCE\""
 
   loone:
     image: ${LOON_E_IMAGE:-loon-e:latest}
