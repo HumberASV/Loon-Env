@@ -107,8 +107,5 @@ RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
     echo "test -f /root/Loon-E/install/setup.bash && source /root/Loon-E/install/setup.bash" >> /root/.bashrc && \
-    echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /root/.bashrc && \
-    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}" >> /root/.bashrc
-
 
 WORKDIR /root/Loon-E

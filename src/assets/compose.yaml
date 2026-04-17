@@ -11,44 +11,31 @@ services:
         - ZED_EXAMPLES_REPO=${ZED_EXAMPLES_REPO:-https://github.com/stereolabs/zed-ros2-examples.git}
         - ZED_EXAMPLES_GIT_REF=${ZED_EXAMPLES_GIT_REF:-master}
     runtime: nvidia
+    iteractive: true
+    tty: true
     privileged: true
-    network_mode: host
     pid: host
     ipc: host
-    stdin_open: true
-    tty: true
+    gpus: all
+    net: host
     environment:
-      - DISPLAY=${DISPLAY:-}
-      - QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen}
-      - QT_X11_NO_MITSHM=1
-      - NVIDIA_DRIVER_CAPABILITIES=all
-      - LOGNAME=root
-      - XAUTHORITY=/root/.Xauthority
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-      - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
-      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      - DISPLAY=${DISPLAY:-:1}
+      - XAUTHORITY=/root/.Xauthority:ro
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
+      - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
+
     volumes:
-      - ${XAUTHORITY:-/home/robo/.Xauthority}:/root/.Xauthority:ro
-      - /tmp/argus_socket:/tmp/argus_socket
+      - /dev:/dev
       - /tmp:/tmp
-      - /etc/systemd/system:/etc/systemd/system:ro
-      - /dev:/dev # This is needed to allow access to the camera and gpu devices, but it also allows access to all other devices which is a security risk. In the future we should switch to using device cgroups to only allow access to the specific devices we need.
-      - /dev/video0:/dev/video0
-      - /dev/bus/usb:/dev/bus/usb
-      - /dev/nvhost-ctrl:/dev/nvhost-ctrl
-      - /dev/nvhost-ctrl-isp:/dev/nvhost-ctrl-isp
-      - /dev/nvhost-prof-gpu:/dev/nvhost-prof-gpu
-      - /dev/nvhost-nvjpg:/dev/nvhost-nvjpg
-      - /dev/nvhost-vic:/dev/nvhost-vic
-      - /tmp/.X11-unix:/tmp/.X11-unix
-      - /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/
-      - /var/nvidia/nvcam/status/:/var/nvidia/nvcam/status/
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /usr/local/zed/settings/:/usr/local/zed/settings/
-      - /usr/local/zed/resources/:/usr/local/zed/resources/
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/
+      - /etc/systemd/system/zed_x_daemon.service:/etc/systemd/system/zed_x_daemon.service:ro
+      - ${HOME}/zed_docker_ai/:/usr/local/zed_docker_ai/
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
     command: >-
-      /bin/bash -c "echo \"building\" &&
+      /bin/bash -c "
+      echo \"building\" &&
       source /opt/ros/humble/setup.bash &&
       source /root/ros2_ws/install/setup.bash &&
       ros2 launch zed_wrapper zed_camera.launch.py
@@ -59,7 +46,7 @@ services:
       sim_port:=${ZED_SIM_PORT:-30000}
       stream_port:=${ZED_STREAM_PORT:-5006}
       stream_address:=${ZED_STREAM_ADDRESS:-}
-      enable_ipc:=false
+      enable_ipc:=true
       param_overrides:=\"stream_server.stream_enabled:=true;stream_server.port:=${ZED_STREAM_PORT:-5006};debug.disable_nitros:=true;depth.depth_mode:=PERFORMANCE\""
 
   loone:

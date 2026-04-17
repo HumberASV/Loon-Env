@@ -73,6 +73,48 @@ require_root() {
 
 # ------------------ INSTALLATION FUNCTIONS ------------------
 
+# Setup for Zedx
+setup_zedx() {
+    echo "Setting up ZED-X dependencies..."
+
+    sudo apt install ros-$ROS_DISTRO-rmw-cyclonedds-cpp -y
+
+    # Set ipfrag_time to 3 seconds to prevent fragmentation issues with the ZED camera stream
+    echo \"setting ipfrag_time to 3\" &&
+    sudo sysctl -w net.ipv4.ipfrag_time=3
+
+    # Set ipfrag_high_thresh to 128MB to allow larger fragmented packets from the ZED stream without dropping them
+    echo \"setting ipfrag_high_thresh to 128MB\" &&
+    sudo sysctl -w net.ipv4.ipfrag_high_thresh=134217728
+
+    # Increase the maximum receive buffer size for network packets to accommodate the high bandwidth of the ZED stream
+    echo \"checking ipfrag_high_thresh\" &&
+    sudo sysctl -w net.core.rmem_max=2147483647
+
+    echo "Reccomend accepting overwriting buffers.conf to make these settings permanent. If you choose not to, you may need to run the above sysctl commands manually after each reboot to ensure proper ZED-X performance."
+    sudo cp -i ${ASSETS_DIR}/buffers.conf /etc/sysctl.d/60-zed-buffers.conf
+
+    # Apply the new sysctl settings immediately
+    sudo sysctl -p /etc/sysctl.d/60-zed-buffers.conf
+
+    # Validate
+    if [ "$(sysctl -n net.core.rmem_max)" != "2147483647" ]; then
+        echo "Error: net.core.rmem_max is not set to 2147483647" >&2
+        exit 1
+    fi
+    if [ "$(sysctl -n net.ipv4.ipfrag_time)" != "3" ]; then
+        echo "Error: net.ipv4.ipfrag_time is not set to 3" >&2
+        exit 1
+    fi
+    if [ "$(sysctl -n net.ipv4.ipfrag_high_thresh)" != "134217728" ]; then
+        echo "Error: net.ipv4.ipfrag_high_thresh is not set to 134217728" >&2
+        exit 1
+    fi
+    
+    sudo cp -f ${ASSETS_DIR}/cyclonedds.xml ~/cyclonedds.xml
+    echo "ZED-X dependencies set up successfully."
+}
+
 # Checks for $GROUP_NAME and creates it if it doesn't exist, then adds the current user to the group
 setup_user_group() {
     if ! getent group "$GROUP_NAME" > /dev/null; then
@@ -105,15 +147,12 @@ install_scripts() {
     local script src_file
 
     echo "Installing Loon-Env..."
-    for script in "LoonE" "LoonLog"; do
-        src_file="$ROOT_DIR/src/$script"
-        if [ -f "$src_file" ]; then
-            sudo cp "$src_file" "$INSTALLATION_BIN_DIR/$script"
-            sudo chmod 755 "$INSTALLATION_BIN_DIR/$script"
-        else
-            echo "Warning: $script not found at $src_file" >&2
-        fi
-    done
+    if [ -f "$ROOT_DIR/src/LoonE" ]; then
+        sudo cp -frv "$ROOT_DIR/src/LoonE"/* "$INSTALLATION_BIN_DIR/LoonE"
+        sudo chmod 755 "$INSTALLATION_BIN_DIR/LoonE"/*
+    else
+        echo "Warning: LoonE script not found at $ROOT_DIR/src/LoonE"
+    fi
     echo "Scripts copied to $INSTALLATION_BIN_DIR"
 }
 
@@ -136,11 +175,6 @@ configure_cache_directory() {
     echo "Cache directory set to $CACHE_DIR"
     mkdir -p "$CACHE_DIR"
     echo "Cache directory created if it did not exist."
-
-    KNOWN_USERS_FILE="$CACHE_DIR/known_users.txt"
-    LOG_FILE="$CACHE_DIR/log.txt"
-    echo "Known users file: $KNOWN_USERS_FILE"
-    echo "Log file: $LOG_FILE"
 }
 
 write_environment_file() {
@@ -149,13 +183,14 @@ write_environment_file() {
     sudo chgrp "$GROUP_NAME" "$HOME/.loon-e-env"
     sudo chmod 660 "$HOME/.loon-e-env"
     sudo cat > "$HOME/.loon-e-env" <<EOF
-export KNOWN_USERS_FILE="$KNOWN_USERS_FILE"
-export LOG_FILE="$LOG_FILE"
 export LOON_E_IMAGE="${LOON_E_IMAGE}"
 export ZED_X_IMAGE="${ZED_X_IMAGE}"
 export LOON_ENV_VERSION="${VERSION}"
 export XAUTHORITY="${HOME}/.Xauthority"
-
+export CYCLONEDDS_URI="file://${HOME}/cyclonedds.xml"
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
 EOF
     result=$(ls -l "$HOME/.loon-e-env" | grep ".loon-e-env")
     if [ -n "$result" ]; then
@@ -173,23 +208,9 @@ update_shell_hooks() {
 if [ -f "$HOME/.loon-e-env" ]; then
     source "$HOME/.loon-e-env"
 fi
-LoonLog -i
 EOF
     fi
-    echo "Updated ~/.bashrc to source Loon-E environment and initialize logging."
-
-    if [ -f "$HOME/.bash_logout" ] && ! grep -q "LoonLog -o" "$HOME/.bash_logout" 2>/dev/null; then
-        echo "LoonLog -o" | sudo tee -a "$HOME/.bash_logout" > /dev/null
-    fi
-    echo "Updated ~/.bash_logout to log user logout with LoonLog."
-}
-
-ensure_log_files() {
-    sudo mkdir -p "$(dirname "$KNOWN_USERS_FILE")"
-    sudo mkdir -p "$(dirname "$LOG_FILE")"
-    sudo touch "$KNOWN_USERS_FILE" "$LOG_FILE"
-    sudo chmod 770 "$KNOWN_USERS_FILE" "$LOG_FILE" || true
-    echo "Log files created and permissions set."
+    echo "Updated ~/.bashrc to source Loon-E environment"
 }
 
 ensure_group_permissions() {
@@ -197,18 +218,12 @@ ensure_group_permissions() {
 
     echo "Ensuring '$GROUP_NAME' has access to installed files and directories..."
 
-    for target in "$INSTALLATION_BIN_DIR" "$INSTALLATION_SHARE_DIR" "$INSTALLATION_CACHE_DIR"; do
+    for target in "$INSTALLATION_SHARE_DIR" "$INSTALLATION_CACHE_DIR"; do
         [ -e "$target" ] || continue
         sudo chgrp -R "$GROUP_NAME" "$target"
         sudo chmod -R g+rwX "$target"
         # setgid keeps new files/dirs in these paths under the installer group
         sudo find "$target" -type d -exec chmod g+s {} +
-    done
-
-    for target in "$KNOWN_USERS_FILE" "$LOG_FILE" "$HOME/.loon-e-env"; do
-        [ -e "$target" ] || continue
-        sudo chgrp "$GROUP_NAME" "$target"
-        sudo chmod g+rw "$target"
     done
 
     echo "Group permissions configured."
@@ -223,6 +238,163 @@ Cache path set to: $CACHE_DIR
 EOF
 }
 
+temporary_xhost_permissions() {
+    # Grant temporary X11 permissions for the current user to allow GUI applications in the container to connect to the host's X server
+    xhost +local:root
+    xhost +local:docker
+}
+
+perminent_xhost_permissions() {
+    # Grant permanent X11 permissions for the current user to allow GUI applications in the container to connect to the host's X server
+    local xhost_entry="local:root"
+    if ! xhost | grep -q "$xhost_entry"; then
+        xhost +local:root
+    fi
+    xhost +local:docker
+}
+
+# Sets MTU temporarily for the current session (reverts after reboot)
+temporary_mtu() {
+    local interface="${1:-eth0}"
+    local mtu="${2:-9000}"
+    
+    echo "Setting temporary MTU to $mtu on $interface..."
+    
+    # Check if interface exists
+    if ! ip link show "$interface" > /dev/null 2>&1; then
+        echo "Error: Interface '$interface' not found" >&2
+        echo "Available interfaces:" >&2
+        ip link show | grep '^[0-9]' | awk '{print "  " $2}' >&2
+        return 1
+    fi
+    
+    # Set the MTU
+    if sudo ip link set dev "$interface" mtu "$mtu"; then
+        echo "MTU set to $mtu on $interface"
+        
+        # Verify the change
+        local actual_mtu=$(ip link show "$interface" | grep -oP '(?<=mtu )\d+')
+        if [ "$actual_mtu" = "$mtu" ]; then
+            echo "Verification successful: MTU is now $mtu"
+            echo "Note: This setting will revert after a reboot. Use permanent_mtu() to make it persistent."
+            return 0
+        else
+            echo "Error: MTU verification failed. Expected $mtu but got $actual_mtu" >&2
+            return 1
+        fi
+    else
+        echo "Error: Failed to set MTU on $interface" >&2
+        return 1
+    fi
+}
+
+# Sets MTU permanently using Netplan configuration
+permanent_mtu() {
+    local interface="${1:-eth0}"
+    local mtu="${2:-9000}"
+    local netplan_dir="/etc/netplan"
+    local config_file=""
+    
+    echo "Setting permanent MTU to $mtu on $interface via Netplan..."
+    
+    # Check if netplan is installed
+    if ! command -v netplan &> /dev/null; then
+        echo "Netplan not found. Installing netplan.io..." >&2
+        sudo apt-get update && sudo apt-get install -y netplan.io
+    fi
+    
+    # Check if interface exists
+    if ! ip link show "$interface" > /dev/null 2>&1; then
+        echo "Error: Interface '$interface' not found" >&2
+        echo "Available interfaces:" >&2
+        ip link show | grep '^[0-9]' | awk '{print "  " $2}' >&2
+        return 1
+    fi
+    
+    # Find or create the Netplan config file
+    if [ -d "$netplan_dir" ]; then
+        # Look for existing config file
+        config_file=$(sudo find "$netplan_dir" -maxdepth 1 -name "*.yaml" -o -name "*.yml" | head -1)
+        
+        if [ -z "$config_file" ]; then
+            # Create a new config file if none exists
+            config_file="$netplan_dir/60-loon-env-mtu.yaml"
+            echo "Creating new Netplan config file: $config_file"
+            sudo tee "$config_file" > /dev/null <<EOF
+network:
+  version: 2
+  ethernets:
+    $interface:
+      dhcp4: true
+      mtu: $mtu
+EOF
+        else
+            echo "Using existing Netplan config: $config_file"
+            
+            # Back up the original file
+            sudo cp "$config_file" "$config_file.backup.$(date +%Y%m%d_%H%M%S)"
+            echo "Backup created: $config_file.backup.*"
+            
+            # Add or modify the MTU setting
+            # This is a simple approach using sed; more complex configs may need special handling
+            if grep -q "^ *$interface:" "$config_file"; then
+                # Interface section exists, add mtu if not present
+                if ! grep -A 5 "^ *$interface:" "$config_file" | grep -q "mtu:"; then
+                    sudo sed -i "/^ *$interface:/a\\      mtu: $mtu" "$config_file"
+                else
+                    # Replace existing MTU value
+                    sudo sed -i "/^ *$interface:/,/^[^ ]/ s/mtu: [0-9]*/mtu: $mtu/" "$config_file"
+                fi
+            else
+                # No interface section, add it
+                sudo tee -a "$config_file" > /dev/null <<EOF
+
+  ethernets:
+    $interface:
+      dhcp4: true
+      mtu: $mtu
+EOF
+            fi
+        fi
+    else
+        echo "Error: Netplan directory not found at $netplan_dir" >&2
+        return 1
+    fi
+    
+    # Verify the config is valid YAML
+    echo "Validating Netplan configuration..."
+    if sudo netplan validate > /dev/null 2>&1; then
+        echo "Configuration validation passed"
+    else
+        echo "Error: Netplan configuration validation failed" >&2
+        echo "Restoring backup..." >&2
+        if [ -n "$config_file" ] && sudo test -f "$config_file.backup".*; then
+            sudo cp "$config_file.backup".* "$config_file"
+        fi
+        return 1
+    fi
+    
+    # Apply the configuration
+    echo "Applying Netplan configuration..."
+    if sudo netplan apply; then
+        echo "Configuration applied successfully"
+        
+        # Verify the change
+        sleep 1
+        local actual_mtu=$(ip link show "$interface" | grep -oP '(?<=mtu )\d+')
+        if [ "$actual_mtu" = "$mtu" ]; then
+            echo "Verification successful: MTU is now $mtu"
+            echo "This setting will persist after reboot."
+            return 0
+        else
+            echo "Warning: MTU verification shows $actual_mtu instead of $mtu" >&2
+            echo "This may be normal if the interface is still reconfiguring." >&2
+        fi
+    else
+        echo "Error: Failed to apply Netplan configuration" >&2
+        return 1
+    fi
+}
 # ------------------ MAIN ------------------
 
 # Main function to orchestrate the installation steps
@@ -230,17 +402,29 @@ EOF
 #   $1 (optional): whether to update shell hooks (default: true)
 main() {
     local update_shell_hooks="${1:-true}"
+    local perminent_xhost="${2:-false}"
+    local perminent_mtu="${3:-false}"
     require_root
+    setup_zedx
     setup_user_group
     setup_directories
     install_scripts
     copy_assets
     configure_cache_directory
     write_environment_file
+    if [ "$perminent_xhost" = true ]; then
+        perminent_xhost_permissions
+    else
+        temporary_xhost_permissions
+    fi
+    if [ "$perminent_mtu" = true ]; then
+        perminent_mtu
+    else 
+        temporary_mtu
+    fi
     if [ "$update_shell_hooks" = true ]; then
         update_shell_hooks
     fi
-    ensure_log_files
     ensure_group_permissions
     print_summary
 }
@@ -256,6 +440,10 @@ parse_arguments() {
             INSTALLATION_CACHE_DIR="./test-cache"
             main false
             echo "Test installation complete. Check the test-bin, test-share, and test-cache directories"
+            ;;
+        -p | --perminent)
+            main true true true
+            echo "Installation complete with permanent X11 permissions and MTU settings. Please log out and log back in for group changes to take effect."
             ;;
         "")
             INSTALLATION_BIN_DIR="$DEFAULT_INSTALL_BIN_DIR"
