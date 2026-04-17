@@ -28,6 +28,7 @@ LOONE_VERSION="2.0.0"
 # Options:
 #   -h, --help   show this help message and exit
 #   -s, --start  start the Docker container if it's not running
+#   --stop [SERVICE...]  stop compose services (zed, loone, or all)
 #   -e, --enter  enter the Docker container
 #   -b, --build   build the Docker image if it doesn't exist
 #   -r, --run     run Loon-E with the specified image, building and starting as needed
@@ -42,8 +43,14 @@ IMAGE_NAME="${2:-${LOON_E_IMAGE:-loon-e:latest}}"
 ASSET_DIR="${ASSET_DIR:-/usr/share/Loon-Env}"
 DOCKERFILE="${DOCKERFILE:-$ASSET_DIR/LoonE/Dockerfile}"
 
+BUILD_PROFILE=""
+BUILD_NO_CACHE=0
+
 #---------------------- FUNCTIONS ------------------
-# Provide help information and exit
+# Display command usage and option help text.
+# Version: 2.0.0
+# Returns:
+#   None: if help text is printed successfully.
 show_help(){
         cat <<'EOF'
 Usage: LoonE [IMAGE_NAME]
@@ -55,17 +62,131 @@ Options:
 IMAGE_NAME   optional image name (default: setup_img)
 -h, --help   show this help message and exit
 -s, --start  start the Docker container if it's not running
+    --stop [SERVICE ...]  stop compose services
+                         services: zed loone all
 -e, --enter  enter the Docker container
 -b, --build   build and run services
+               optional build profile: virtual | zedx
+    --build-zed    build only the zed service
+                   optional build profile: virtual | zedx
+    --build-loone  build only the loone service
+                   optional build profile: virtual | zedx
+-n, --no-cache    build images without Docker build cache (use with build flags)
 -q, --quack   what does this do? Try it and find out!
 -v, --version   show version information and exit
 EOF
 }
 
-# Function to check if container is running; it's stupid but readable
+# Stop compose services.
+# Parameters:
+#   $@ (optional): zero or more targets from zed, loone, all
+# Defaults:
+#   Stops both zed and loone when no targets are provided.
+stop_services() {
+    local compose_file="$ASSET_DIR/compose.yaml"
+    local targets=()
+    local arg
+
+    if [ "$#" -eq 0 ]; then
+        targets=(zed loone)
+    else
+        for arg in "$@"; do
+            case "$arg" in
+                all)
+                    targets=(zed loone)
+                    ;;
+                zed|loone)
+                    targets+=("$arg")
+                    ;;
+                *)
+                    echo "Error: unknown stop target '$arg'."
+                    echo "Allowed targets: zed, loone, all."
+                    return 1
+                    ;;
+            esac
+        done
+    fi
+
+    # Deduplicate while preserving first-seen order.
+    local deduped=()
+    local seen=""
+    for arg in "${targets[@]}"; do
+        case " $seen " in
+            *" $arg "*) ;;
+            *)
+                deduped+=("$arg")
+                seen="$seen $arg"
+                ;;
+        esac
+    done
+
+    echo "Stopping services: ${deduped[*]}"
+    docker compose -f "$compose_file" stop "${deduped[@]}"
+}
+
+# Parse optional build arguments after a build flag.
+# Accepted values:
+#   virtual | zedx : profile that sets ZED runtime environment variables
+#   -n | --no-cache : build with docker no-cache
+parse_build_args() {
+    BUILD_PROFILE=""
+    BUILD_NO_CACHE=0
+
+    for arg in "$@"; do
+        case "$arg" in
+            virtual|zedx)
+                if [ -n "$BUILD_PROFILE" ]; then
+                    echo "Error: multiple build profiles provided ('$BUILD_PROFILE' and '$arg')."
+                    echo "Use only one profile: virtual or zedx."
+                    return 1
+                fi
+                BUILD_PROFILE="$arg"
+                ;;
+            -n|--no-cache)
+                BUILD_NO_CACHE=1
+                ;;
+            "")
+                ;;
+            *)
+                echo "Error: unknown build argument '$arg'."
+                echo "Allowed build arguments: virtual, zedx, -n, --no-cache."
+                return 1
+                ;;
+        esac
+    done
+}
+
+# Apply profile-driven environment overrides for compose-based runs.
+apply_build_profile() {
+    local profile="${1:-}"
+
+    case "$profile" in
+        virtual)
+            export ZED_SIM_MODE=true
+            export ZED_USE_SIM_TIME=true
+            export ZED_CAMERA_MODEL=zedx
+            echo "Using build profile: virtual (ZED_SIM_MODE=true, ZED_USE_SIM_TIME=true)."
+            ;;
+        zedx)
+            export ZED_SIM_MODE=false
+            export ZED_USE_SIM_TIME=false
+            export ZED_CAMERA_MODEL=zedx
+            echo "Using build profile: zedx (ZED_SIM_MODE=false, ZED_USE_SIM_TIME=false)."
+            ;;
+        "")
+            ;;
+        *)
+            echo "Error: unsupported build profile '$profile'."
+            return 1
+            ;;
+    esac
+}
+
+# Check whether the target container is currently running.
+# Version: 2.0.0
 # Returns:
-#   0 if running
-#   1 if not running
+#   0: if the container is running.
+#   1: if the container is not running.
 is_container_running() {
     if docker ps --filter "name=^/${IMAGE_NAME}$" --filter "status=running" --format '{{.Names}}' | grep -xq "${IMAGE_NAME}"; then
         return 0 # Running
@@ -74,11 +195,11 @@ is_container_running() {
     fi
 }
 
-# Function to check if image is built
-# also stupid but readable
+# Check whether the target Docker image exists locally.
+# Version: 2.0.0
 # Returns:
-#   0 if image exists
-#   1 if image does not exist
+#   0: if the image exists.
+#   1: if the image does not exist.
 is_image_built() {
     if docker image inspect "$IMAGE_NAME" &> /dev/null; then
         return 0 # Image exists
@@ -87,7 +208,11 @@ is_image_built() {
     fi
 }
 
-# function to enter the container if it's not running
+# Enter an interactive shell inside the running target container.
+# Version: 2.0.0
+# Returns:
+#   0: if container shell is entered and exits normally.
+#   1: if the container is not running or does not exist.
 enter_container() {
     xhost +local:root
     xhost +local:docker
@@ -102,8 +227,8 @@ enter_container() {
     docker exec -it "$IMAGE_NAME" bash 
 }
 
-# This function will compose both the Zedx and Loon-E ros containers
-run_services() {
+# Configure display and xauth before compose commands.
+setup_x11() {
     export DISPLAY="${DISPLAY:-:1}"
     local host_xauth="${XAUTHORITY:-$HOME/.Xauthority}"
     local docker_xauth="/tmp/.docker.xauth"
@@ -123,23 +248,89 @@ run_services() {
 
     DISPLAY="$DISPLAY" xhost +local:root
     DISPLAY="$DISPLAY" xhost +local:docker
-    echo Building zed and loone containers...
-    docker compose -f "$ASSET_DIR/compose.yaml" up -d
 }
 
-# Function to parse command-line arguments
+# Build only the zed service.
+# Parameters:
+#   $1 (optional): 1 to enable --no-cache, 0 otherwise.
+build_zed() {
+    local no_cache="${1:-0}"
+    local compose_file="$ASSET_DIR/compose.yaml"
+
+    echo Building zed container...
+    if [ "$no_cache" -eq 1 ]; then
+        docker compose -f "$compose_file" build --no-cache zed
+    else
+        docker compose -f "$compose_file" build zed
+    fi
+}
+
+# Build only the loone service.
+# Parameters:
+#   $1 (optional): 1 to enable --no-cache, 0 otherwise.
+build_loone() {
+    local no_cache="${1:-0}"
+    local compose_file="$ASSET_DIR/compose.yaml"
+
+    echo Building loone container...
+    if [ "$no_cache" -eq 1 ]; then
+        docker compose -f "$compose_file" build --no-cache loone
+    else
+        docker compose -f "$compose_file" build loone
+    fi
+}
+
+# Build and start the Docker Compose services for Zedx and Loon-E.
+# Parameters:
+#   $1 (optional): 1 to enable --no-cache, 0 otherwise.
+# Returns:
+#   0: if compose build and startup complete successfully.
+#   non-zero: if Docker Compose commands fail.
+run_services() {
+    local no_cache="${1:-0}"
+    local compose_file="$ASSET_DIR/compose.yaml"
+
+    setup_x11
+    echo Building zed and loone containers...
+    build_zed "$no_cache" || return 1
+    build_loone "$no_cache" || return 1
+    docker compose -f "$compose_file" up -d --force-recreate
+}
+
+# Parse the first CLI option and dispatch the matching command handler.
+# Version: 2.0.0
+# Parameters:
+#   $1 (optional): command option flag to execute (default: none).
+# Returns:
+#   0: if the selected command completes successfully.
+#   1: if no valid option is provided.
 parse_arguments() {
-    local user=$(whoami)
-    local pid=$$
     case "${1:-}" in
         -s|--start)
             start_container
+            ;;
+        --stop)
+            stop_services "${@:2}" || exit 1
             ;;
         -e|--enter)
             enter_container
             ;;
         -b|--build)
-            run_services
+            parse_build_args "${@:2}" || exit 1
+            apply_build_profile "$BUILD_PROFILE" || exit 1
+            run_services "$BUILD_NO_CACHE"
+            ;;
+        --build-zed)
+            parse_build_args "${@:2}" || exit 1
+            apply_build_profile "$BUILD_PROFILE" || exit 1
+            setup_x11
+            build_zed "$BUILD_NO_CACHE"
+            ;;
+        --build-loone)
+            parse_build_args "${@:2}" || exit 1
+            apply_build_profile "$BUILD_PROFILE" || exit 1
+            setup_x11
+            build_loone "$BUILD_NO_CACHE"
             ;;
         -h|--help)
             show_help
