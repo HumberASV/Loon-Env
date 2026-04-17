@@ -5,7 +5,7 @@
       <Interfaces>
         <NetworkInterface autodetermine="true" priority="default" multicast="default" />
       </Interfaces>
-      <AllowMulticast>default</AllowMulticast>
+      <AllowMulticast>false</AllowMulticast><!-- Disable multicast to avoid issues with Tailscale streaming -->
       <MaxMessageSize>65500B</MaxMessageSize>
     </General>
     <Internal>
@@ -14,5 +14,11 @@
         <WhcHigh>500kB</WhcHigh>
       </Watermarks>
     </Internal>
+    <Discovery>
+    <Peers>
+        <Peer address="100.68.31.22"/> <!-- ZED Simulator IP address -->
+    </Peers>
+    </Discovery>
+
   </Domain>
 </CycloneDDS>
