@@ -405,10 +405,30 @@ perminent_xhost_permissions() {
     xhost +local:docker
 }
 
+select_interface() {
+    local interfaces
+    echo "Available network interfaces:"
+    mapfile -t interfaces < <(ip link show | grep '^[0-9]' | awk '{print $2}' | sed 's/:$//')
+    if [ ${#interfaces[@]} -eq 0 ]; then
+        echo "No network interfaces found." >&2
+        return 1
+    fi
+    select interface in "${interfaces[@]}"; do
+        if [ -n "$interface" ]; then
+            echo "$interface"
+            return 0
+        else
+            echo "Invalid selection. Please try again." >&2
+        fi
+    done
+}
+
 # Sets MTU temporarily for the current session (reverts after reboot)
 temporary_mtu() {
-    local interface="${1:-eth0}"
+    local interface
     local mtu="${2:-9000}"
+    
+    interface=$(select_interface) || exit 1
     
     echo "Setting temporary MTU to $mtu on $interface..."
     
@@ -442,10 +462,12 @@ temporary_mtu() {
 
 # Sets MTU permanently using Netplan configuration
 permanent_mtu() {
-    local interface="${1:-eth0}"
+    local interface
     local mtu="${2:-9000}"
     local netplan_dir="/etc/netplan"
     local config_file=""
+    
+    interface=$(select_interface) || exit 1
     
     echo "Setting permanent MTU to $mtu on $interface via Netplan..."
     
