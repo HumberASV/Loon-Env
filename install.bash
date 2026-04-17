@@ -341,50 +341,15 @@ write_version_marker() {
 update_shell_hooks() {
     local bashrc_file="$HOME/.bashrc"
     local bash_logout_file="$HOME/.bash_logout"
-    local bashrc_block
-    local bash_logout_block
+    local bashrc_block bashrc_block
 
-    bashrc_block=$(cat <<EOF
-$BASHRC_BLOCK_START
-# Loon-E logger environment
-if [ -f "$HOME/.loon-e-env" ]; then
-    source "$HOME/.loon-e-env"
-fi
-<<<<<<< HEAD
-EOF
-    fi
-    echo "Updated ~/.bashrc to source Loon-E environment"
-=======
-LoonLog -i
-$BASHRC_BLOCK_END
-EOF
-)
-
-    bash_logout_block=$(cat <<EOF
-$BASHLOGOUT_BLOCK_START
-LoonLog -o
-$BASHLOGOUT_BLOCK_END
-EOF
-)
-
+    bashrc_block="# Loon-E environment initialization
+if [ -f \"\$HOME/.loon-e-env\" ]; then
+    source \"\$HOME/.loon-e-env\"
+fi"
     upsert_managed_block "$bashrc_file" "$BASHRC_BLOCK_START" "$BASHRC_BLOCK_END" "$bashrc_block"
     echo "Updated ~/.bashrc managed block for Loon-E environment and login logging."
 
-    upsert_managed_block "$bash_logout_file" "$BASHLOGOUT_BLOCK_START" "$BASHLOGOUT_BLOCK_END" "$bash_logout_block"
-    echo "Updated ~/.bash_logout managed block for logout logging."
-}
-
-# Ensures required log files and their parent directories exist.
-# Version: 2.0.0
-# Returns
-# 0: if log file setup completes successfully
-ensure_log_files() {
-    sudo mkdir -p "$(dirname "$KNOWN_USERS_FILE")"
-    sudo mkdir -p "$(dirname "$LOG_FILE")"
-    sudo touch "$KNOWN_USERS_FILE" "$LOG_FILE"
-    sudo chmod 770 "$KNOWN_USERS_FILE" "$LOG_FILE" || true
-    echo "Log files created and permissions set."
->>>>>>> cfea7fea008d2cfac611488c3c819a564c8e7897
 }
 
 # Applies group ownership and permissions to installed resources.
@@ -601,7 +566,6 @@ main() {
     copy_assets
     configure_cache_directory
     write_environment_file
-<<<<<<< HEAD
     if [ "$perminent_xhost" = true ]; then
         perminent_xhost_permissions
     else
@@ -612,9 +576,6 @@ main() {
     else 
         temporary_mtu
     fi
-=======
-    write_version_marker
->>>>>>> cfea7fea008d2cfac611488c3c819a564c8e7897
     if [ "$update_shell_hooks" = true ]; then
         update_shell_hooks
     fi
