@@ -23,6 +23,8 @@ FROM nvcr.io/nvidia/isaac/ros:aarch64-ros2_humble_4c0c55dddd2bbcc3e8d5f9753bee63
 
 ARG LOONE_REPO=https://github.com/HumberASV/Loon-E.git
 ARG LOONE_GIT_REF=main
+ARG ZED_SDK_VERSION=5.2
+ARG L4T_VERSION=36.4
 
 # -----------------------------
 # 0. Jetson APT keyring bootstrap
@@ -63,7 +65,10 @@ RUN echo "run" && \
 # -----------------------------
 # 2. ZED SDK Installation
 # -----------------------------
-RUN wget -q https://download.stereolabs.com/zedsdk/5.2/l4t36.4/jetsons -O zed_sdk.run && \
+COPY check-l4t-match.sh /usr/local/bin/check-l4t-match
+RUN chmod +x /usr/local/bin/check-l4t-match
+
+RUN wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 
 RUN python3 -m pip install --no-cache-dir numpy
@@ -107,5 +112,7 @@ RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
     echo "test -f /root/Loon-E/install/setup.bash && source /root/Loon-E/install/setup.bash" >> /root/.bashrc && \
+    echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /root/.bashrc && \
+    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /root/.bashrc
 
 WORKDIR /root/Loon-E

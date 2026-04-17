@@ -29,6 +29,8 @@ ARG ZED_WRAPPER_REPO=https://github.com/HumberASV/zed-ros2-wrapper.git
 ARG ZED_WRAPPER_GIT_REF=master
 ARG ZED_EXAMPLES_REPO=https://github.com/stereolabs/zed-ros2-examples.git
 ARG ZED_EXAMPLES_GIT_REF=master
+ARG ZED_SDK_VERSION=5.2
+ARG L4T_VERSION=36.4
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CMAKE_PREFIX_PATH="/usr/local/zed:$CMAKE_PREFIX_PATH"
@@ -73,7 +75,10 @@ RUN echo "run" && \
 # -----------------------------
 # 2. ZED SDK Installation
 # -----------------------------
-RUN wget -q https://download.stereolabs.com/zedsdk/5.2/l4t36.4/jetsons -O zed_sdk.run && \
+COPY check-l4t-match.sh /usr/local/bin/check-l4t-match
+RUN chmod +x /usr/local/bin/check-l4t-match
+
+RUN wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 
 RUN python3 -m pip install --no-cache-dir "numpy<2"
@@ -145,9 +150,11 @@ RUN VERSION_REQ_URL="https://catalog.ngc.nvidia.com/api/resources/versions?orgNa
 RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
     ln -sf /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 /usr/lib/aarch64-linux-gnu/libv4l2.so || true
 
+RUN sudo apt install ros-$ROS_DISTRO-rmw-cyclonedds-cpp
+
 RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
     echo "test -f /root/ros2_ws/install/setup.bash && source /root/ros2_ws/install/setup.bash" >> /root/.bashrc && \
     echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /root/.bashrc && \
-    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}" >> /root/.bashrc
+    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /root/.bashrc
 
 WORKDIR /root/ros2_ws

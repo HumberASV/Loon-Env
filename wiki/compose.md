@@ -31,6 +31,8 @@ docker compose -f src/assets/compose.yaml up -d --build
 |---|---|---|---|
 | `ZED_X_IMAGE` | `zed-x:latest` | `zed.image` | Image name/tag for the ZED service. |
 | `ZED_DOCKERFILE` | `Zedx/Dockerfile` | `zed.build.dockerfile` | Dockerfile path used to build the ZED image. |
+| `ZED_SDK_VERSION` | `5.2` | `zed.build.args`, `loone.build.args` | ZED SDK version passed to the installer URL. |
+| `L4T_VERSION` | `36.4` | `zed.build.args`, `loone.build.args` | L4T release used to select the ZED SDK installer. |
 | `ZED_WRAPPER_REPO` | `https://github.com/HumberASV/zed-ros2-wrapper.git` | `zed.build.args` | Source repository for the ZED ROS2 wrapper. |
 | `ZED_WRAPPER_GIT_REF` | `master` | `zed.build.args` | Git branch/tag/commit for `ZED_WRAPPER_REPO`. |
 | `ZED_EXAMPLES_REPO` | `https://github.com/stereolabs/zed-ros2-examples.git` | `zed.build.args` | Source repository for ZED ROS2 examples. |
@@ -55,6 +57,7 @@ These are set in the `environment` section for both `zed` and `loone` unless not
 | `ROS_LOCALHOST_ONLY` | `0` | `zed`, `loone` | `1` restricts ROS 2 traffic to localhost; `0` allows network communication. |
 | `RMW_IMPLEMENTATION` | `rmw_fastrtps_cpp` | `zed`, `loone` | ROS 2 middleware implementation. |
 | `LOGNAME` | `root` | `zed` only | Sets process username environment value. |
+| `HOST_L4T_RELEASE_FILE` | `/host-nv_tegra_release` | `zed`, `loone` | Host-side L4T release file mounted into the container for the startup mismatch check. The startup guard also verifies the container CUDA version for the supported L4T family. |
 
 ## ZED Launch Variables
 
@@ -89,3 +92,4 @@ Note: `XAUTHORITY` appears in two contexts:
 - Keep `ROS_DOMAIN_ID`, `ROS_LOCALHOST_ONLY`, and `RMW_IMPLEMENTATION` aligned across both services.
 - If GUI tools fail, verify `DISPLAY`, the `/tmp/.X11-unix` mount, and `XAUTHORITY` host path.
 - If simulation does not connect, check `ZED_SIM_ADDRESS`, `ZED_SIM_PORT`, `ZED_STREAM_PORT`, and `ZED_STREAM_ADDRESS`.
+- The containers now refuse to start if the host `/etc/nv_tegra_release` does not match the container's L4T release, and they validate the container CUDA version for the matching JetPack/L4T family.

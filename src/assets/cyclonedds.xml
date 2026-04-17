@@ -3,7 +3,7 @@
   <Domain Id="any">
     <General>
       <Interfaces>
-        <NetworkInterface autodetermine="true" priority="default" multicast="default" />
+        <NetworkInterface autodetermine="true" priority="default" multicast="false" />
       </Interfaces>
       <AllowMulticast>false</AllowMulticast><!-- Disable multicast to avoid issues with Tailscale streaming -->
       <MaxMessageSize>65500B</MaxMessageSize>
@@ -15,8 +15,10 @@
       </Watermarks>
     </Internal>
     <Discovery>
-    <Peers>
-        <Peer address="100.68.31.22"/> <!-- ZED Simulator IP address -->
+      <ParticipantIndex>auto</ParticipantIndex>
+      <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+      <Peers>
+        <Peer address="127.0.0.1"/>
     </Peers>
     </Discovery>
 

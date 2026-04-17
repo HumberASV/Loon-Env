@@ -190,7 +190,7 @@ setup_zedx() {
         exit 1
     fi
     
-    sudo cp -f ${ASSETS_DIR}/cyclonedds.xml ~/cyclonedds.xml
+    sudo cp -f "$ASSETS_DIR/cyclonedds.xml" "$HOME/cyclonedds.xml"
     echo "ZED-X dependencies set up successfully."
 }
 

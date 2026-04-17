@@ -26,6 +26,8 @@ Loon-Env provides installer, logging, and Docker wrapper scripts for the Loon-E 
 | ROS_LOCALHOST_ONLY | ROS 2 localhost-only toggle (default in compose: `0`). |
 | RMW_IMPLEMENTATION | ROS 2 middleware implementation (default in compose: `rmw_fastrtps_cpp`). |
 | ZED_DOCKERFILE | Optional override for ZED Dockerfile path in compose. |
+| ZED_SDK_VERSION | ZED SDK version passed through to the Dockerfiles (default: `5.2`). |
+| L4T_VERSION | L4T release used to select the ZED SDK installer (default: `36.4`). |
 | ZED_WRAPPER_REPO | Optional Git repo used when building the ZED wrapper image. |
 | ZED_WRAPPER_GIT_REF | Optional branch, tag, or commit for the ZED wrapper repo. |
 | ZED_EXAMPLES_REPO | Optional Git repo used when building ZED examples. |

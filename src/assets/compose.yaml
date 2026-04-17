@@ -32,48 +32,49 @@ services:
       context: .
       dockerfile: ${ZED_DOCKERFILE:-Zedx/Dockerfile}
       args:
+        - ZED_SDK_VERSION=${ZED_SDK_VERSION:-5.2}
+        - L4T_VERSION=${L4T_VERSION:-36.4}
         - ZED_WRAPPER_REPO=${ZED_WRAPPER_REPO:-https://github.com/HumberASV/zed-ros2-wrapper.git}
         - ZED_WRAPPER_GIT_REF=${ZED_WRAPPER_GIT_REF:-master}
         - ZED_EXAMPLES_REPO=${ZED_EXAMPLES_REPO:-https://github.com/stereolabs/zed-ros2-examples.git}
         - ZED_EXAMPLES_GIT_REF=${ZED_EXAMPLES_GIT_REF:-master}
     runtime: nvidia
-    iteractive: true
+    stdin_open: true
     tty: true
     privileged: true
     pid: host
     ipc: host
     gpus: all
-    net: host
+    network_mode: host
     environment:
       - DISPLAY=${DISPLAY:-:1}
       - XAUTHORITY=/root/.Xauthority:ro
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
-      - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY}
-      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
-
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+      - CYCLONEDDS_URI=file:///root/cyclonedds.xml
+      - HOST_L4T_RELEASE_FILE=/host-nv_tegra_release
     volumes:
       - /dev:/dev
-      - /tmp:/tmp
+      - /tmp:/tmp/
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/
+      - /usr/local/zed/resources:/usr/local/zed/resources
+      - /usr/local/zed/settings:/usr/local/zed/settings
       - /etc/systemd/system/zed_x_daemon.service:/etc/systemd/system/zed_x_daemon.service:ro
+      - /etc/nv_tegra_release:/host-nv_tegra_release:ro
       - ${HOME}/zed_docker_ai/:/usr/local/zed_docker_ai/
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      - ${CYCLONEDDS_CONFIG_PATH:-/home/carson/cyclonedds.xml}:/root/cyclonedds.xml:ro
     command: >-
       /bin/bash -c "
-      echo \"building\" &&
+      /usr/local/bin/check-l4t-match &&
       source /opt/ros/humble/setup.bash &&
       source /root/ros2_ws/install/setup.bash &&
-      ros2 launch zed_wrapper zed_camera.launch.py
+      ros2 launch zed_display_rviz2 display_zed_cam.launch.py 
       camera_model:=${ZED_CAMERA_MODEL:-zedx}
-      sim_mode:=${ZED_SIM_MODE:-true}
-      use_sim_time:=${ZED_USE_SIM_TIME:-true}
-      sim_address:=${ZED_SIM_ADDRESS:-100.68.31.22}
-      sim_port:=${ZED_SIM_PORT:-30000}
-      stream_port:=${ZED_STREAM_PORT:-5006}
-      stream_address:=${ZED_STREAM_ADDRESS:-}
-      enable_ipc:=true
-      param_overrides:=\"stream_server.stream_enabled:=true;stream_server.port:=${ZED_STREAM_PORT:-5006};debug.disable_nitros:=true;depth.depth_mode:=PERFORMANCE\""
+      enable_ipc:=false
+      param_overrides:=\"debug.disable_nitros:=false;depth.depth_mode:=PERFORMANCE\""
 
   # Loon-E Service
   loone:
@@ -82,6 +83,8 @@ services:
       context: .
       dockerfile: ${LOONE_DOCKERFILE:-LoonE/Dockerfile}
       args:
+        - ZED_SDK_VERSION=${ZED_SDK_VERSION:-5.2}
+        - L4T_VERSION=${L4T_VERSION:-36.4}
         - LOONE_REPO=${LOONE_REPO:-https://github.com/HumberASV/Loon-E.git}
         - LOONE_GIT_REF=${LOONE_GIT_REF:-main}
     runtime: nvidia
@@ -97,15 +100,19 @@ services:
       - QT_X11_NO_MITSHM=1
       - NVIDIA_DRIVER_CAPABILITIES=all
       - XAUTHORITY=/root/.Xauthority
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-5}
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
-      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
+      - CYCLONEDDS_URI=file:///root/cyclonedds.xml
+      - HOST_L4T_RELEASE_FILE=/host-nv_tegra_release
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - /dev:/dev
       - /tmp:/tmp
       - /home/robo:/home/robo
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /etc/nv_tegra_release:/host-nv_tegra_release:ro
+      - ${CYCLONEDDS_CONFIG_PATH:-/home/carson/cyclonedds.xml}:/root/cyclonedds.xml:ro
     deploy:
       resources:
         reservations:
@@ -113,7 +120,7 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    command: /bin/bash -c "echo \"building\ at $(pwd)\" &&
+    command: /bin/bash -c "/usr/local/bin/check-l4t-match &&
       source /opt/ros/humble/setup.bash &&
       source /root/Loon-E/install/setup.bash &&
       ros2 launch loon_e_coms coms_launch.py"
