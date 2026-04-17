@@ -56,6 +56,7 @@ BASHLOGOUT_BLOCK_END="# <<< Loon-E logout managed block <<<"
 
 # Where source scripts are located
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ASSETS_DIR="$ROOT_DIR/src/assets"
 
 # ------------------ FUNCTIONS ------------------
 
