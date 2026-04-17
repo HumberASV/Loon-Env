@@ -151,6 +151,10 @@ END {
 setup_zedx() {
     echo "Setting up ZED-X dependencies..."
 
+    # Check if ROS_DISTRO is set, default to 'humble' if not
+    ROS_DISTRO="${ROS_DISTRO:-humble}"
+    echo "Using ROS distribution: $ROS_DISTRO"
+
     sudo apt install ros-$ROS_DISTRO-rmw-cyclonedds-cpp -y
 
     # Set ipfrag_time to 3 seconds to prevent fragmentation issues with the ZED camera stream
