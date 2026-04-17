@@ -239,8 +239,8 @@ install_scripts() {
 
     echo "Installing Loon-Env..."
     if [ -f "$ROOT_DIR/src/LoonE" ]; then
-        sudo cp -frv "$ROOT_DIR/src/LoonE"/* "$INSTALLATION_BIN_DIR/LoonE"
-        sudo chmod 755 "$INSTALLATION_BIN_DIR/LoonE"/*
+        sudo cp -f "$ROOT_DIR/src/LoonE" "$INSTALLATION_BIN_DIR/LoonE"
+        sudo chmod 755 "$INSTALLATION_BIN_DIR/LoonE"
     else
         echo "Warning: LoonE script not found at $ROOT_DIR/src/LoonE"
     fi
