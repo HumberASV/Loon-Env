@@ -46,22 +46,11 @@ services:
     net: host
     environment:
       - DISPLAY=${DISPLAY:-:1}
-<<<<<<< HEAD
       - XAUTHORITY=/root/.Xauthority:ro
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID}
       - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY}
       - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}
 
-=======
-      - QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen}
-      - QT_X11_NO_MITSHM=1
-      - NVIDIA_DRIVER_CAPABILITIES=all
-      - LOGNAME=root
-      - XAUTHORITY=/root/.Xauthority
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-5}
-      - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
-      - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
->>>>>>> cfea7fea008d2cfac611488c3c819a564c8e7897
     volumes:
       - /dev:/dev
       - /tmp:/tmp
@@ -82,15 +71,9 @@ services:
       sim_address:=${ZED_SIM_ADDRESS:-100.68.31.22}
       sim_port:=${ZED_SIM_PORT:-30000}
       stream_port:=${ZED_STREAM_PORT:-5006}
-<<<<<<< HEAD
       stream_address:=${ZED_STREAM_ADDRESS:-}
       enable_ipc:=true
       param_overrides:=\"stream_server.stream_enabled:=true;stream_server.port:=${ZED_STREAM_PORT:-5006};debug.disable_nitros:=true;depth.depth_mode:=PERFORMANCE\""
-=======
-      stream_address:=${ZED_STREAM_ADDRESS:-0.0.0.0}
-      enable_ipc:=${ZED_ENABLE_IPC:-true}
-      param_overrides:=\"stream_server.stream_enabled:=${ZED_STREAM_ENABLED:-true};stream_server.port:=${ZED_STREAM_PORT:-5006};debug.disable_nitros:=${ZED_DISABLE_NITROS:-false};depth.depth_mode:=NEURAL\""
->>>>>>> cfea7fea008d2cfac611488c3c819a564c8e7897
 
   # Loon-E Service
   loone:
