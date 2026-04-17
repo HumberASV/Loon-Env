@@ -36,7 +36,7 @@ set -euo pipefail
 APP_NAME="Loon-Env"
 VERSION="2.0.2"
 GROUP_NAME="loon-env-users"
-HOME="$(eval echo "~$SUDO_USER")" # Determine the home directory of the user running the script with sudo
+HOME="$(eval echo "~${SUDO_USER:-$USER}")" # Determine the home directory of the user running the script with sudo
 
 # Default installation paths (can be overridden by command-line arguments)
 DEFAULT_INSTALL_BIN_DIR="/usr/local/bin"
