@@ -407,20 +407,27 @@ perminent_xhost_permissions() {
 
 select_interface() {
     local interfaces
-    echo "Available network interfaces:"
+    local interface
+    local selection
+
     mapfile -t interfaces < <(ip link show | grep '^[0-9]' | awk '{print $2}' | sed 's/:$//')
     if [ ${#interfaces[@]} -eq 0 ]; then
         echo "No network interfaces found." >&2
         return 1
     fi
+
+    echo "Available network interfaces:" >&2
+    PS3="Select interface: "
     select interface in "${interfaces[@]}"; do
         if [ -n "$interface" ]; then
-            echo "$interface"
-            return 0
+            selection="$interface"
+            break
         else
             echo "Invalid selection. Please try again." >&2
         fi
-    done
+    done >&2
+
+    printf '%s' "$selection"
 }
 
 # Sets MTU temporarily for the current session (reverts after reboot)
