@@ -73,6 +73,8 @@ services:
       source /root/ros2_ws/install/setup.bash &&
       ros2 launch zed_display_rviz2 display_zed_cam.launch.py 
       camera_model:=${ZED_CAMERA_MODEL:-zedx}
+      publish_tf:=true
+      publish_map_tf:=true
       enable_ipc:=false
       param_overrides:=\"debug.disable_nitros:=false;depth.depth_mode:=PERFORMANCE\""
 

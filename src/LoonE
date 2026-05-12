@@ -22,7 +22,7 @@
 
 # The LoonE script is a convenient wrapper for managing the Docker environment for the Loon-E project.
 # Version
-LOONE_VERSION="2.0.0"
+LOONE_VERSION="2.0.1"
 # Usage:
 #   LoonE [OPTIONS] [IMAGE_NAME]
 # Options:
@@ -307,7 +307,7 @@ run_services() {
 parse_arguments() {
     case "${1:-}" in
         -s|--start)
-            start_container
+            run_services
             ;;
         --stop)
             stop_services "${@:2}" || exit 1

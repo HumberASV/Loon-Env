@@ -34,7 +34,7 @@ set -euo pipefail
 
 # ------------------- CONSTANTS ------------------
 APP_NAME="Loon-Env"
-VERSION="2.0.2"
+VERSION="2.0.3"
 GROUP_NAME="loon-env-users"
 HOME="$(eval echo "~${SUDO_USER:-$USER}")" # Determine the home directory of the user running the script with sudo
 
