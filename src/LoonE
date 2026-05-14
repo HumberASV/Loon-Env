@@ -22,7 +22,7 @@
 
 # The LoonE script is a convenient wrapper for managing the Docker environment for the Loon-E project.
 # Version
-LOONE_VERSION="3.0.0"
+LOONE_VERSION="3.0.1"
 # Usage:
 #   LoonE [OPTIONS] [IMAGE_NAME]
 # Options:
@@ -51,7 +51,7 @@ BUILD_NO_CACHE=0
 # Version: 2.0.0
 # Returns:
 #   None: if help text is printed successfully.
-show_help(){
+show_help() {
         cat <<'EOF'
 Usage: LoonE [IMAGE_NAME]
 
@@ -146,7 +146,7 @@ build() {
     # Parse build options
     BUILD_PROFILE="" # zed, loone, both
     BUILD_CACHE="" # flag for --no-cache
-    BUILD_FOR_HARDWARE=0 # flag for hardware profile (if not set, defaults to virtual)
+    BUILD_FOR_HARDWARE="" # flag for hardware profile (if not set, defaults to virtual)
 
     for arg in "$@"; do
         case "$arg" in
@@ -181,11 +181,13 @@ build() {
 
     # call compose build with the appropriate arguments
     local compose_file="$ASSET_DIR/compose.yaml"
+    echo "Building with profile: ${BUILD_PROFILE:-all}, cache: ${BUILD_CACHE:-enabled}, hardware config: ${BUILD_FOR_HARDWARE:+$BUILD_FOR_HARDWARE}"
     case "$BUILD_PROFILE" in
         zed)
             docker compose -f "$compose_file" build $BUILD_CACHE --build-arg $BUILD_FOR_HARDWARE zed
             ;;
         loone)
+
             docker compose -f "$compose_file" build $BUILD_CACHE --build-arg $BUILD_FOR_HARDWARE loone
             ;;
         "")
@@ -286,7 +288,7 @@ run_services() {
         build || { echo "Build failed. Aborting."; return 1; }
     fi
     echo Starting services with Docker Compose...
-    docker compose -f "$compose_file" up -d || { echo "Failed to start services. Aborting."; return 1; 
+    docker compose -f "$compose_file" up -d || { echo "Failed to start services. Aborting."; return 1; }
 }
 
 # Parse the first CLI option and dispatch the matching command handler.
@@ -308,7 +310,7 @@ parse_arguments() {
             enter_container
             ;;
         -b|--build)
-            parse_build_args "${@:2}" || exit 1
+            build "${@:2}" || exit 1
             ;;
         -h|--help)
             show_help
