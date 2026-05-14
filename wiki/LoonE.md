@@ -15,22 +15,25 @@
 LoonE [OPTION] [IMAGE_NAME]
 ```
 
+The optional profile argument for build options can be `virtual` or `zedx`, which set specific tree of our 
+Zed Wrapper to build.
+
+- Virtual: [streaming branch](https://github.com/HumberASV/zed-ros2-wrapper/tree/streaming)
+- ZEDx: [built-in](https://github.com/HumberASV/zed-ros2-wrapper/tree/main)
+
 ## Options
+
+- `-h`, `--help`
+  Prints help text.
+- `-v`, `--version`
+  Prints Loon-Env and LoonE version information.
+
+- `-s`, `start`
+  starts the compose stack. If the stack is already running, this will have no effect.
 
 - `-b`, `--build`
   Builds `zed` and `loone`, then starts/recreates the compose stack.
   Accepts optional profile argument: `virtual` or `zedx`.
-
-- `--build-zed`
-  Builds only the `zed` service image.
-  Accepts optional profile argument: `virtual` or `zedx`.
-
-- `--build-loone`
-  Builds only the `loone` service image.
-  Accepts optional profile argument: `virtual` or `zedx`.
-
-- `-n`, `--no-cache`
-  Use Docker build without cache. Supported with `--build`, `--build-zed`, and `--build-loone`.
 
 - `-e`, `--enter`
   Opens an interactive shell in a running container whose name matches the chosen image name.
@@ -39,17 +42,26 @@ LoonE [OPTION] [IMAGE_NAME]
   Stops compose services. Supported targets: `zed`, `loone`, `all`.
   If no service is provided, both `zed` and `loone` are stopped.
 
-- `-h`, `--help`
-  Prints help text.
-
 - `-q`, `--quack`
   Prints `Quack!`.
 
-- `-v`, `--version`
-  Prints Loon-Env and LoonE version information.
+Build options:
+- `--zed`
+  Builds only the `zed` service image.
+  Accepts optional profile argument: `virtual` or `zedx`.
 
-- `-s`, `--start`
-  Present in argument parsing, but currently wired to a missing `start_container` function. Do not rely on this option until the script is fixed.
+- `--loone`
+  Builds only the `loone` service image.
+  Accepts optional profile argument: `virtual` or `zedx`.
+
+- `-n`, `--no-cache`
+  Use Docker build without cache. Supported with `--build`, `--build-zed`, and `--build-loone`.
+
+- `-v`, `--virtual`
+  Sets build profile to `virtual`, which configures the ZED wrapper for simulation use (sets `ZED_SIM_MODE=true` and `ZED_USE_SIM_TIME=true`).
+
+- `-x`, `--zedx`
+  Sets build profile to `zedx`, which configures the ZED wrapper for hardware use (sets `ZED_SIM_MODE=false` and `ZED_USE_SIM_TIME=false`).
 
 ## Environment Variables
 
@@ -72,8 +84,8 @@ LoonE [OPTION] [IMAGE_NAME]
   Any variables documented in `wiki/compose.md` (for example `ROS_DOMAIN_ID`, `RMW_IMPLEMENTATION`, `ZED_*`, `LOONE_*`) can be exported before running `LoonE` and will be consumed by `docker compose`.
 
 - Build profiles
-  `virtual` exports `ZED_SIM_MODE=true` and `ZED_USE_SIM_TIME=true`.
-  `zedx` exports `ZED_SIM_MODE=false` and `ZED_USE_SIM_TIME=false`.
+  `virtual` uses the `streaming` branch of the ZED wrapper and sets `ZED_SIM_MODE=true` and `ZED_USE_SIM_TIME=true`.
+  `zedx` uses the `built-in` branch of the ZED wrapper and sets `ZED_SIM_MODE=false` and `ZED_USE_SIM_TIME=false`.
   Both profiles export `ZED_CAMERA_MODEL=zedx`.
 
 ## Examples
@@ -88,24 +100,6 @@ Build and start without cache:
 
 ```bash
 LoonE -b --no-cache
-```
-
-Build and start in virtual profile:
-
-```bash
-LoonE -b virtual
-```
-
-Build ZED in hardware profile without cache:
-
-```bash
-LoonE --build-zed zedx --no-cache
-```
-
-Build only ZED:
-
-```bash
-LoonE --build-zed
 ```
 
 Stop both services:

@@ -19,6 +19,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# Loon-E Dockerfile
+# Arguments:
+#   LOONE_REPO: Git repository URL for Loon-E source code
+#   LOONE_GIT_REF: Git reference (branch, tag, or commit) to checkout
+#   ZED_SDK_VERSION: Version of the ZED SDK to install
+#   L4T_VERSION: Version of L4T to target for ZED SDK installation
+
 FROM nvcr.io/nvidia/isaac/ros:aarch64-ros2_humble_4c0c55dddd2bbcc3e8d5f9753bee634c
 
 ARG LOONE_REPO=https://github.com/HumberASV/Loon-E.git

@@ -35,7 +35,7 @@ services:
         - ZED_SDK_VERSION=${ZED_SDK_VERSION:-5.2}
         - L4T_VERSION=${L4T_VERSION:-36.4}
         - ZED_WRAPPER_REPO=${ZED_WRAPPER_REPO:-https://github.com/HumberASV/zed-ros2-wrapper.git}
-        - ZED_WRAPPER_GIT_REF=${ZED_WRAPPER_GIT_REF:-master}
+        - ZED_WRAPPER_GIT_REF=${ZED_WRAPPER_GIT_REF:-built-in}
         - ZED_EXAMPLES_REPO=${ZED_EXAMPLES_REPO:-https://github.com/stereolabs/zed-ros2-examples.git}
         - ZED_EXAMPLES_GIT_REF=${ZED_EXAMPLES_GIT_REF:-master}
     runtime: nvidia
@@ -71,13 +71,7 @@ services:
       /usr/local/bin/check-l4t-match &&
       source /opt/ros/humble/setup.bash &&
       source /root/ros2_ws/install/setup.bash &&
-      ros2 launch zed_display_rviz2 display_zed_cam.launch.py 
-      camera_model:=${ZED_CAMERA_MODEL:-zedx}
-      publish_tf:=true
-      publish_map_tf:=true
-      enable_ipc:=false
-      param_overrides:=\"debug.disable_nitros:=false;depth.depth_mode:=PERFORMANCE\""
-
+      ros2 launch zed_display_rviz2 display_zed_cam.launch.py"
   # Loon-E Service
   loone:
     image: ${LOON_E_IMAGE:-loon-e:latest}
