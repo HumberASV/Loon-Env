@@ -1,0 +1,755 @@
+#!/bin/bash
+#
+# Installation script for Loon-Env
+#
+# Copyright (c) 2026 Carson Fujita
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+
+set -eo pipefail # Exit on error and handle errors in pipelines
+IFS=$'\n\t' # Handle spaces in filenames
+
+# Installer information
+APP_NAME="Loon-Env"
+VERSION="4.0.0" # Change this on each release
+PATH_INSTALL="/opt/loon-env"
+LOONE_SCRIPT_INSTALL="/usr/local/bin/LoonE"
+LOONE_SOURCE="./src/LoonE"
+ASSETS_DIR="./src/assets"
+WORKSPACE_DIR="$HOME/LoonE_ws"
+GROUP_NAME="loon-env-users"
+
+
+
+# Installer constants
+VERBOSE=0
+DRY_RUN=0
+LOCKFILE="/tmp/loon-env-install.lock"
+INSTALL_DEPS=0
+
+# Variables to hold detected versions
+ZED_SDK_VERSION="5.2" #Default
+
+# TODO: Add support for other ROS distros and operating systems in the future
+ROS_DISTRO="humble" # Default
+OPERATING_SYSTEM="ubuntu" # Default
+OPERATING_SYSTEM_VERSION="jammy" # Default
+
+
+# >>> Argument Functions <<<
+
+###############################
+# Display usage information
+# Globals:
+#  None
+# Arguments:
+#  None
+# Outputs:
+#  Prints usage information to stdout
+###############################
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+Options:
+  -h, --help        Show this help message and exit
+  -v, --verbose     Enable verbose output
+  -i, --install-deps  Install required dependencies
+  --dry-run         Show what would be done without making any changes
+  --version         Show the version of the installer and exit
+EOF
+}
+
+###############################
+# Display version information
+# Globals:
+#  VERSION
+# Arguments:
+#  None
+# Outputs:
+#  Prints version information to stdout
+###############################
+version() {
+    echo "$APP_NAME Installer version $VERSION"
+}
+
+#################################
+# Logs a message if verbose mode is enabled
+# Globals:
+#  VERBOSE
+# Arguments:
+#  msg - The message to log
+# Outputs:
+#  Prints the message to stdout if verbose mode is enabled
+#################################
+log() {
+    if [[ "$VERBOSE" -eq 1 ]]; then
+        echo "[INFO] $@"
+    fi
+}
+
+#################################
+# Executes a command, respecting dry-run mode
+# Globals:
+#  DRY_RUN
+# Arguments:
+#  cmd - The command to execute
+# Outputs:
+#  Executes the command if not in dry-run mode, otherwise prints it
+run() {
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "[DRY RUN] $@"
+    else
+        eval "$@"
+    fi
+}
+
+# >>> Utility Functions <<<
+
+#######################################
+# Create lock file to prevent concurrent installations
+# Globals:
+#  LOCKFILE
+# Arguments:
+#  None
+# Outputs:
+#  Writes the current process ID to the lock file
+#######################################
+create_lock() {
+    log "Creating installation lock at $LOCKFILE..."
+    run 'echo "$$" > "$LOCKFILE"'    
+}
+
+#########################################
+# Remove lock file on exit
+# Globals:
+#  LOCKFILE
+# Arguments:
+#  None
+# Outputs:
+#  Removes the lock file
+#########################################
+cleanup() {
+    log "Cleaning up installation lock..."
+    run rm -f "$LOCKFILE"
+}
+
+#########################################
+# Check if the script is run as root
+# Globals:
+#  EUID
+# Arguments:
+#  None
+# Outputs:
+#  Exits with an error message if run as root
+#########################################
+require_non_root() {
+    if [[ "$EUID" -eq 0 ]]; then
+        echo "This installer must not be run as root. Please use a regular user account." >&2
+        exit 1
+    fi
+}
+
+#######################################
+# Check if a required command is available
+# Globals:
+#  INSTALL_DEPS
+# Arguments:
+#  cmd - The command to check for
+#  error_msg - Optional custom error message to display if the command is not found
+# Outputs:
+#  Exits with an error message if the command is not found
+#######################################
+require_command() {
+    log "Checking for required command: $1"
+    local cmd="$1"
+    local error_msg="${2:-Error: Required command '$cmd' not found. Please install it and try again.}"
+    if ! command -v "$cmd" &> /dev/null; then
+        echo "$error_msg" >&2
+        exit 1
+    fi
+}
+
+
+########################################
+# Unlike require_command, 
+# this function will attempt to install the dependency if it's not found
+# Globals:
+#  INSTALL_DEPS
+# Arguments:
+#  cmd - The command to check for
+#  install_cmd - The command to install the dependency if it's not found
+# Outputs:
+#  Installs the dependency if it's not found, otherwise does nothing
+########################################
+install_dependency() {
+    log "Checking for dependency: $1"
+    local cmd="$1"
+    local install_cmd="$2"
+    if ! command -v "$cmd" &> /dev/null; then
+        if [[ "$INSTALL_DEPS" -eq 1 ]]; then
+            log "$1 is not found. Installing dependency: $cmd"
+            run "$install_cmd"
+        else
+            echo "Error: Required command '$cmd' not found. Please install it and try again." >&2
+            exit 1
+        fi
+    fi
+}
+
+########################################
+# Check if ZED SDK is installed and get its version
+# Globals:
+#  ZED_VERSION
+# Arguments:
+#  None
+# Outputs:
+#  Exits with an error message if ZED SDK is not found, otherwise sets ZED_VERSION variable
+########################################
+require_zedsdk() {
+    log "Checking for ZED SDK installation at /usr/local/zed..."
+    if [[ -d "/usr/local/zed" ]]; then
+        ZED_VERSION=$(sudo cat /usr/local/zed/VERSION)
+        log "Found ZED SDK version $ZED_VERSION"
+    else
+        echo "Error: ZED SDK not found. Please install it and try again." >&2
+        exit 1
+    fi
+}
+
+#######################################
+# Migrate old installation if it exists
+# Globals:
+#  None
+# Arguments:
+#  None
+# Outputs:
+#  Moves old installation directory to new location if it exists
+#######################################
+migrate_old_installation() {
+    log "Checking for existing installation at $HOME/.loon-env..."
+    local old_path="$HOME/.loon-env"
+    local new_path="/opt/loon-env"
+
+    if [[ -d "$old_path" ]]; then
+        log "Migrating existing installation from $old_path to $new_path..."
+        run sudo mv "$old_path" "$new_path"
+        log "Migration complete."
+    fi
+}
+
+##################################
+# Parse command-line arguments
+# Globals:
+#  VERBOSE
+#  DRY_RUN
+# Arguments:
+#  All command-line arguments
+# Outputs:
+#  Sets global variables based on the provided arguments
+##################################
+parse_arguments() {
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            -h|--help) usage; exit 0 ;;
+            --version) version; exit 0 ;;
+            -v|--verbose) VERBOSE=1 ;;
+            -i|--install-deps) INSTALL_DEPS=1 ;;
+            --dry-run) DRY_RUN=1 ;;
+            *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
+        esac
+        shift
+    done
+}
+
+
+# >>> Installation Functions <<<
+
+################################
+# Install Docker if it's not already installed
+# Globals:
+#  None
+# Arguments:
+#  None
+# Outputs:
+#  Installs Docker, cli and compose if it's not already installed, otherwise does nothing
+################################
+install_docker() {
+    # Second check just incase...
+    if command -v docker &> /dev/null; then
+        log "Docker is already installed. Skipping Docker installation."
+        return
+    fi
+
+    log "Checking GPG key for Docker repository..."
+    # check GPG key for Docker repository
+    if ! gpg --list-keys | grep -q "Docker Release"; then
+        log "Adding Docker GPG key..."
+        run 'sudo install -m 0755 -d /etc/apt/keyrings'
+        run 'sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor > /usr/share/keyrings/docker-archive-keyring.gpg'
+        run 'sudo chmod a+r /etc/apt/keyrings/docker.gpg'
+
+        log "Verifying Docker GPG key..."
+        if ! gpg --keyring /usr/share/keyrings/docker-archive-keyring.gpg --list-keys | grep -q "Docker Release"; then
+            echo "Error: Failed to verify Docker GPG key." >&2
+            exit 1
+        else
+            log "Docker GPG key verified successfully."
+        fi
+
+        log "Adding Docker repository to APT sources..."
+        run bash -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null'
+
+        log "verifying Docker repository..."
+         if ! grep -q "download.docker.com" /etc/apt/sources.list.d/docker.list; then
+            echo "Error: Failed to verify Docker repository." >&2
+            exit 1
+        else
+            log "Docker repository verified successfully."
+        fi
+
+        log "Updating APT package index and installing Docker..."
+        run sudo apt update
+        run sudo apt-cache policy docker-ce
+        run sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+        # Verify Docker installation
+        if ! command -v docker &> /dev/null; then
+            echo "Error: Docker installation failed." >&2
+            exit 1
+        else
+            log "Docker installed successfully."
+        fi
+    fi
+}
+
+##################################
+# Install ROS 2 if it's not already installed
+# Globals:
+#  ROS_DISTRO
+# Arguments:
+#  None
+# Outputs:
+#  Installs ROS 2 if it's not already installed, otherwise does nothing
+##################################
+install_ros() {
+    log "Checking for nvidia jetpack"
+    local nvidia_jetpack_installed=$(dpkg -l | grep nvidia-jetpack)
+    if [[ -z "$nvidia_jetpack_installed" ]]; then
+        echo "Error: NVIDIA Jetpack not found. Please install NVIDIA Jetpack and try again." >&2
+        exit 1
+    fi
+    log "NVIDIA Jetpack detected. Proceeding with ROS 2 installation check."
+
+    if [[ -d "/opt/ros/$ROS_DISTRO" ]]; then
+        log "ROS 2 $ROS_DISTRO is already installed. Skipping ROS installation."
+        return
+    fi
+    log "ROS 2 $ROS_DISTRO not found. Proceeding with installation."
+
+    log "Installing ROS 2 $ROS_DISTRO..."
+    run sudo apt update && sudo apt install -y "ros-$ROS_DISTRO-base"
+    
+    log "Adding ROS 2 setup to .bashrc..."
+    run echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> ~/.bashrc
+    
+    # Verify ROS installation
+    if [[ -d "/opt/ros/$ROS_DISTRO" ]]; then
+        log "ROS 2 $ROS_DISTRO installed successfully."
+    else
+        echo "Error: ROS 2 installation failed." >&2
+        exit 1
+    fi
+}
+
+##################################
+# Install ZED SDK, skipping CUDA installation since it's not needed for Loon-Env 
+# Since it should be in jetpack, and installing it separately can cause issues with the existing CUDA installation
+# Globals:
+#  L4T_VERSION
+#  ZED_SDK_VERSION
+# Arguments:
+#  None
+# Outputs:
+#  Installs ZED SDK if it's not already installed, otherwise does nothing
+#######################################
+install_zedsdk() {
+     if [[ "$L4T_VERSION" == "unknown" ]]; then
+        echo "Warning: Unable to detect L4T version." >&2
+        while true; do
+            read -p "Please enter your L4T version (e.g. 36.4): " input
+            if [[ "$input" =~ ^[0-9]+\.[0-9]+$ ]]; then
+                L4T_VERSION="$input"
+                break
+            else
+                echo "Invalid format. \
+                 Please enter in the format X.X (e.g. 36.4).
+                 or end installation" >&2
+            fi
+        done
+        return
+    fi
+    log "Installing ZED SDK..."
+    run wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION}/jetsons" -O zed_sdk.run && \
+    chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
+}
+
+
+
+
+# >> Main Functions <<
+
+#################################
+# Create a group for Loon-Env users and add the current user to it
+# Checks if user "robo" exist and creates it if it doesn't, then adds it to the group
+# Globals:
+#  GROUP_NAME
+#  USERNAME
+# Arguments:
+#  None
+# Outputs:
+#  Creates a group for Loon-Env users if it doesn't exist and adds the current user to it
+#################################
+create_group_and_add_user() {
+    log "Creating group $GROUP_NAME if it doesn't exist..."
+    if ! getent group "$GROUP_NAME" > /dev/null; then
+        run sudo groupadd "$GROUP_NAME"
+        log "Group $GROUP_NAME created successfully."
+    else
+        log "Group $GROUP_NAME already exists. Skipping group creation."
+    fi
+
+    log "Adding user $USERNAME to group $GROUP_NAME..."
+    if id -nG "$USERNAME" | grep -qw "$GROUP_NAME"; then
+        log "User $USERNAME is already in group $GROUP_NAME. Skipping user addition."
+    else
+        run sudo usermod -aG "$GROUP_NAME" "$USERNAME"
+        log "User $USERNAME added to group $GROUP_NAME successfully."
+    fi
+
+    # create robo user if it doesn't exist and add to group
+    if ! id -u "robo" > /dev/null 2>&1; then
+        log "Creating user robo and adding to group $GROUP_NAME..."
+        run sudo useradd -m -s /bin/bash -G "$GROUP_NAME" robo
+        log "User robo created and added to group $GROUP_NAME successfully."
+    else
+        log "User robo already exists. Skipping user creation."
+        # Check if robo is in the group
+        if id -nG "robo" | grep -qw "$GROUP_NAME"; then
+            log "User robo is already in group $GROUP_NAME. Skipping user addition."
+        else
+            run sudo usermod -aG "$GROUP_NAME" robo
+            log "User robo added to group $GROUP_NAME successfully."
+        fi
+    fi
+}
+
+#################################
+# Installation function that checks for dependencies, and optionally installs
+# Globals:
+#  INSTALL_DEPS
+# Arguments:
+#  None
+# Outputs:
+#  Installs dependencies if --install-deps is specified, migrates old installation if it exists, and installs Loon-Env
+################################
+installation() {
+
+    # Requirements for installing docker, ros, and zedsdk
+    if [[ "$INSTALL_DEPS" -eq 1 ]]; then
+        log "Require APT-GET for dependency installation"
+        require_command "apt-get" \
+            "apt-get is required to install dependencies. Please install apt-get or use install without --install-deps and try again." 
+
+        log "Require curl for dependency installation"
+
+        install_dependency "curl" \
+            "curl is required to download dependencies. Please install curl and try again." \
+            "sudo apt-get update && sudo apt-get install -y curl"
+
+        install_dependency "gnupg" \
+            "gnupg is required to add package repositories. Please install gnupg and try again." \
+            "sudo apt-get update && sudo apt-get install -y gnupg"
+        
+        install_dependency "lsb-release" \
+            "lsb-release is required to detect the operating system version. Please install lsb-release and try again." \
+            "sudo apt-get update && sudo apt-get install -y lsb-release"
+        
+        install_dependency "ca-certificates" \
+            "ca-certificates is required to securely download dependencies. Please install ca-certificates and try again." \
+            "sudo apt-get update && sudo apt-get install -y ca-certificates"
+
+        install_dependency "gpg" \
+            "gpg is required to verify package signatures. Please install gpg and try again." \
+            "sudo apt-get update && sudo apt-get install -y gpg"
+
+        install_docker
+        install_ros
+        install_zedsdk
+    fi
+
+    install_dependency "wget" \
+            "wget is required to download dependencies. Please install wget and try again." \
+            "sudo apt-get update && sudo apt-get install -y wget"
+
+    install_dependency "git" \
+        "git is required to clone the Loon-E repository. Please install git and try again." \
+        "sudo apt-get update && sudo apt-get install -y git"
+
+    log "Git is available. Proceeding with installation."
+
+    # Check for NVIDIA GPU and drivers
+    require_command "nvidia-smi" \
+        "NVIDIA GPU not detected. Ensure you are using Jetpack on a compatible NVIDIA Jetson device with proper drivers installed."
+
+    require_zedsdk
+}
+
+################################
+# Set up environment variables for the workspace and docker images
+# Globals:
+#  WORKSPACE_DIR
+# Arguments:
+#  None
+# Outputs:
+#  Exports environment variables for the workspace and docker images
+################################
+set_variables() {
+    log "Checking for existing environment variable setup in ~/.loon_env_setup.bash..."
+    if [[ -f "$HOME/.loon_env_setup.bash" ]]; then
+        log "Existing environment variable setup found. Skipping variable setup."
+        
+    else
+        run echo "export LOONE_FILES_DIR=\"$PATH_INSTALL\"" >> ~/.loon_env_setup.bash
+        run echo "export LOONE_WORKSPACE_DIR=\"$WORKSPACE_DIR\"" >> ~/.loon_env_setup.bash
+        run echo "export LOONE_SETUP_SCRIPT=\"\$HOME/.loon_env_setup.bash\"" >> ~/.loon_env_setup.bash
+        run echo "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" >> ~/.loon_env_setup.bash
+        run echo "export ROS_DOMAIN_ID=0" >> ~/.loon_env_setup.bash
+        run echo "export ROS_LOCALHOST_ONLY=0" >> ~/.loon_env_setup.bash
+        log "Environment variables set and exported to ~/.loon_env_setup.bash"
+    fi
+    log "Set ~/.bashrc to source ~/.loon_env_setup.bash if it exists"
+    if ! grep -q "source ~/.loon_env_setup.bash" ~/.bashrc; then
+        run echo "source ~/.loon_env_setup.bash" >> ~/.bashrc
+        log "Added source command to ~/.bashrc"
+    else
+        log "Source command already exists in ~/.bashrc. Skipping."
+    fi
+
+    log "Setting group permissions for $GROUP_NAME to access $PATH_INSTALL"
+    run sudo chown -R :"$GROUP_NAME" "$PATH_INSTALL"
+    log "Done. Setting permissions to 644 for ~/.loon_env_setup.bash"
+    run chmod 644 ~/.loon_env_setup.bash
+    log "Permissions set for ~/.loon_env_setup.bash"
+    
+    log "Environment variable setup complete."
+}
+
+
+###############################
+# Sets up our workspace and downloads the git repositories for docker use
+# Globals:
+#  WORKSPACE_DIR
+# Arguments:
+#  None
+# Outputs:
+#  Creates the ROS 2 workspace directory structure and source file for environment variables
+###############################
+setup_workspace() {
+    # ZED ROS2 Wrapper dependencies version
+    local XACRO_VERSION=2.0.8
+    local DIAGNOSTICS_VERSION=4.0.0
+    local AMENT_LINT_VERSION=0.12.11
+    local ROBOT_LOCALIZATION_VERSION=3.5.3
+    local ZED_MSGS_VERSION=5.3.0
+    local NMEA_MSGS_VERSION=2.0.0
+    local ANGLES_VERSION=1.15.0
+    local GEOGRAPHIC_INFO_VERSION=1.0.6
+    local POINTCLOUD_TRANSPORT_VERSION=1.0.18
+    local POINTCLOUD_TRANSPORT_PLUGINS_VERSION=1.0.11
+    local RMW_CYCLONEDDS_VERSION=1.3.4
+    local BACKWARD_ROS_VERSION=1.0.7
+    local PYPI_URL=https://pypi.jetson-ai-lab.io/jp6/cu126
+
+    local src_dir="$WORKSPACE_DIR"
+
+    log "Creating ROS 2 workspace at $WORKSPACE_DIR..."
+    run mkdir -p "$src_dir"
+    
+    log "Moving ./src/loon_ws to $WORKSPACE_DIR/loon_ws if it exists..."
+    if [[ -d "./src/loon_ws" ]]; then
+        run mv "./src/loon_ws" "$WORKSPACE_DIR/loon_ws"
+        log "Moved loon_ws to workspace directory."
+    else
+        echo "[WARNING] No existing loon_ws found in ./src. Skipping move." >&2
+    fi
+
+    log "Downloading a ton of git repostiories for zed wrapper"
+    # TODO
+    run wget 'https://github.com/ros/xacro/archive/refs/tags/'${XACRO_VERSION}+'.tar.gz -O - | tar -xvz && mv xacro-' + ${XACRO_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/xacro'
+    run wget 'https://github.com/ros/diagnostics/archive/refs/tags/'${DIAGNOSTICS_VERSION}+'.tar.gz -O - | tar -xvz && mv diagnostics-' + ${DIAGNOSTICS_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/diagnostics'
+    run wget 'https://github.com/ament/ament_lint/archive/refs/tags/'${AMENT_LINT_VERSION}+'.tar.gz -O - | tar -xvz && mv ament_lint-' + ${AMENT_LINT_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/ament-lint'
+    run wget 'https://github.com/cra-ros-pkg/robot_localization/archive/refs/tags/'${ROBOT_LOCALIZATION_VERSION}+'.tar.gz -O - | tar -xvz && mv robot_localization-' + ${ROBOT_LOCALIZATION_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/robot-localization'
+    run wget 'https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/'${ZED_MSGS_VERSION}+'.tar.gz -O - | tar -xvz && mv zed-ros2-interfaces-' + ${ZED_MSGS_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/zed-ros2-interfaces'
+    run wget 'https://github.com/ros-drivers/nmea_msgs/archive/refs/tags/'${NMEA_MSGS_VERSION}+'.tar.gz -O - | tar -xvz && mv nmea_msgs-' + ${NMEA_MSGS_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/nmea_msgs'
+    run wget 'https://github.com/ros/angles/archive/refs/tags/'${ANGLES_VERSION}+'.tar.gz -O - | tar -xvz && mv angles-' + ${ANGLES_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/angles'
+    run wget 'https://github.com/ros2/rmw_cyclonedds/archive/refs/tags/'${RMW_CYCLONEDDS_VERSION} '.tar.gz -O - | tar -xvz && mv rmw_cyclonedds-' + ${RMW_CYCLONEDDS_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/rmw_cyclonedds'
+    run wget 'https://github.com/ros-geographic-info/geographic_info/archive/refs/tags/'${GEOGRAPHIC_INFO_VERSION} + '.tar.gz -O - | tar -xvz && mv geographic_info-' + ${GEOGRAPHIC_INFO_VERSION} +"$WORKSPACE_DIR"+'/zed_ws/src/geographic-info'
+    run wget 'https://github.com/pal-robotics/backward_ros/archive/refs/tags/'${BACKWARD_ROS_VERSION} + '.tar.gz -O - | tar -xvz && mv backward_ros-' + ${BACKWARD_ROS_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/backward_ros' && \
+    run 'cp -r geographic-info/geographic_msgs/ ' + "$WORKSPACE_DIR" + '/zed_ws/src/geographic-info/ && \ rm -rf geographic-info'
+
+    log "Moving ./src/zed_ws to $WORKSPACE_DIR/zed_ws if it exists..."
+    if [[ -d "./src/zed_ws" ]]; then
+        run mv "./src/zed_ws" "$WORKSPACE_DIR/zed_ws"
+        log "Moved zed_ws to workspace directory."
+    else
+        echo "[WARNING] No existing zed_ws found in ./src. Skipping move." >&2
+    fi
+
+    log "Moving ./src/docker to $WORKSPACE_DIR/docker if it exists..."
+    if [[ -d "./src/docker" ]]; then
+        run mv "./src/docker" "$WORKSPACE_DIR/docker"
+        log "Moved docker to workspace directory."
+    else
+        echo "[WARNING] No existing docker found in ./src. Skipping move." >&2
+    fi
+
+    log "Subdirectories for loon_e and zedx created in workspace src."
+}
+
+##################################
+# Install Loon-Env by copying assets and the main script to their respective locations
+# Globals:
+#  VERSION
+#  PATH_INSTALL
+#  ASSETS_DIR
+#  LOON_E_SOURCE
+#  LOON_E_SCRIPT_INSTALL
+# Arguments:
+#  None
+# Outputs:
+#  Copies assets to installation directory, overwrites existing files, and installs the main script to /usr/local/bin
+#######################################
+install_loon_env() {
+    migrate_old_installation
+    log "Installing Loon-Env assets of $VERSION to $PATH_INSTALL"
+    run sudo mkdir -p "$PATH_INSTALL/assets"
+
+    log "Copying assets or overwriting to $PATH_INSTALL/assets"
+    run sudo cp -r "$ASSETS_DIR/." "$PATH_INSTALL/assets/"
+
+    # asset permissions to group and read/write for owner and group, read for others
+    log "Setting permissions for $PATH_INSTALL/assets to group ownership of $GROUP_NAME and read write for owner and group, read for others"
+    run sudo chown -R :"$GROUP_NAME" "$PATH_INSTALL/assets"
+    run sudo chmod -R 774 "$PATH_INSTALL/assets"
+
+    log "Loon-Env assets installed to $PATH_INSTALL/assets with permissions set."
+
+    log "Moving copy of Loon-Env script to $LOON_E_SCRIPT_INSTALL"
+    run sudo mkdir -p "$(dirname "$LOON_E_SCRIPT_INSTALL")"
+    if [[ ! -f "$LOON_E_SOURCE" ]]; then
+        echo "Error: LoonE source not found at $LOON_E_SOURCE" >&2
+        exit 1
+    fi
+    run sudo cp "$LOON_E_SOURCE" "$LOON_E_SCRIPT_INSTALL"
+    
+    log "Loon-Env script copied to $LOON_E_SCRIPT_INSTALL"
+
+    # Set group ownership and permissions for the script
+    run sudo chown :"$GROUP_NAME" "$LOON_E_SCRIPT_INSTALL"
+
+    # Make the script executable
+    run sudo chmod 755 "$LOON_E_SCRIPT_INSTALL"
+    
+    log "Permissions set for $LOON_E_SCRIPT_INSTALL: group ownership to $GROUP_NAME and executable by all users."
+
+    # Verify installation
+    if [[ -f "$LOON_E_SCRIPT_INSTALL" ]]; then
+        log "Loon-Env script installed successfully at $LOON_E_SCRIPT_INSTALL."
+    else
+        echo "Error: Failed to install Loon-Env script." >&2
+        exit 1
+    fi
+
+    # verify assets installation
+    if [[ -d "$PATH_INSTALL/assets" ]]; then
+        log "Loon-Env assets installed successfully at $PATH_INSTALL/assets."
+    else
+        echo "Error: Failed to install Loon-Env assets." >&2
+        exit 1
+    fi
+}
+
+# >>> Main Script <<<
+
+parse_arguments "$@"
+
+log "Checking for existing installation lock..."
+
+# Check for existing installation lock
+# Put here to run immediately before any significant operations to save time
+if [[ -f "$LOCKFILE" ]]; then
+    echo "Another installation is already in progress. Please wait for it to finish." >&2
+    exit 1
+fi
+log "No existing installation lock found. Creating installation lock..."
+
+create_lock
+
+# Set trap to clean up lock file on exit
+trap cleanup EXIT
+
+log "Proceeding with OS check."
+
+# verify that the script is being run on a supported operating system and version
+if [[ -f "/etc/os-release" ]]; then
+    . /etc/os-release
+    if [[ "$ID" != "ubuntu" || "$VERSION_ID" != "22.04" ]]; then
+        echo "Unsupported operating system. This installer is designed for Ubuntu 22.04." >&2
+        exit 1
+    fi
+else
+    # TODO: Add support for other operating systems in the future
+    echo "Unable to detect operating system. This installer is designed for Ubuntu 22.04." >&2
+    read -p "Do you want to continue anyway? (y/N) " -n 1 -r
+    echo
+    if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+        echo "Installation aborted."
+        exit 1
+    else
+        log "Continuing with installation despite unsupported operating system."
+    fi
+fi
+
+log "Detecting various system information for installation..."
+
+L4T_VERSION="$(cat /etc/nv_tegra_release 2>/dev/null | grep -oE 'R[0-9]+T[0-9]+' || echo "unknown")" # Default to unknown if not found
+USERNAME="$(id -un)"
+THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+USER_HOME="$(eval echo "~$USERNAME")"
+
+log "Detected OS: $NAME $VERSION_ID"
+log "Detected L4T version: $L4T_VERSION"
+log "Current user: $USERNAME"
+log "User home directory: $USER_HOME"
+log "Script directory: $THIS_SCRIPT_DIR"
+
+require_non_root
+
+setup_workspace

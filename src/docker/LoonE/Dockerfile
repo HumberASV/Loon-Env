@@ -1,4 +1,5 @@
 # Copyright (c) 2026 Carson Fujita
+# Copyright (c) 2026 Uday Chahal
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -18,28 +19,49 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+# Loon-E Dockerfile
+# Arguments:
+#   LOONE_REPO: Git repository URL for Loon-E source code
+#   LOONE_GIT_REF: Git reference (branch, tag, or commit) to checkout
+#   ZED_SDK_VERSION: Version of the ZED SDK to install
+#   L4T_VERSION: Version of L4T to target for ZED SDK installation
+
 FROM nvcr.io/nvidia/isaac/ros:aarch64-ros2_humble_4c0c55dddd2bbcc3e8d5f9753bee634c
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV CMAKE_PREFIX_PATH="/usr/local/zed:$CMAKE_PREFIX_PATH"
-ENV ZED_DIR="/usr/local/zed"
-ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ARG LOONE_REPO=https://github.com/HumberASV/Loon-E.git
+ARG LOONE_GIT_REF=main
+ARG ZED_SDK_VERSION=5.2
+ARG L4T_VERSION=36.4
+
+# -----------------------------
+# 0. Jetson APT keyring bootstrap
+# -----------------------------
+RUN set -eux; \
+    mkdir -p /usr/share/keyrings; \
+    curl -fsSL https://repo.download.nvidia.com/jetson/jetson-ota-public.asc \
+    | gpg --dearmor -o /usr/share/keyrings/nvidia-jetson-archive-keyring.gpg; \
+    curl -fsSL https://dl.yarnpkg.com/debian/pubkey.gpg \
+    | gpg --dearmor -o /usr/share/keyrings/yarn-archive-keyring.gpg; \
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do \
+        [ -f "$f" ] || continue; \
+        sed -i 's|^deb \(\[[^]]*\] \)\?https://repo.download.nvidia.com/jetson/|deb [signed-by=/usr/share/keyrings/nvidia-jetson-archive-keyring.gpg] https://repo.download.nvidia.com/jetson/|g' "$f"; \
+        sed -i 's|^deb \(\[[^]]*\] \)\?https://dl.yarnpkg.com/debian/|deb [signed-by=/usr/share/keyrings/yarn-archive-keyring.gpg] https://dl.yarnpkg.com/debian/|g' "$f"; \
+    done
 
 # -----------------------------
 # 1. System dependencies & Isaac ROS Repo
 # -----------------------------
-RUN rm -f /etc/apt/sources.list.d/yarn.list && \
+RUN echo "run" && \
     apt-get update && apt-get install -y \
     wget curl gnupg2 lsb-release ca-certificates jq git zstd udev \
     libusb-1.0-0 libv4l-0 kmod \
     libqt5xml5 libqt5core5a libqt5gui5 libqt5widgets5 libqt5opengl5 \
     && curl -fsSL https://isaac.download.nvidia.com/isaac-ros/repos.key | gpg --dearmor -o /usr/share/keyrings/nvidia-isaac-ros.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/nvidia-isaac-ros.gpg] https://isaac.download.nvidia.com/isaac-ros/release-3 jammy release-3" | tee /etc/apt/sources.list.d/nvidia-isaac-ros.list \
+    && echo "deb [signed-by=/usr/share/keyrings/nvidia-isaac-ros.gpg] https://isaac.download.nvidia.com/isaac-ros/release-3 jammy main" | tee /etc/apt/sources.list.d/nvidia-isaac-ros.list \
     && apt-get update && apt-get install -y \
     ros-humble-isaac-ros-yolov8 \
     ros-humble-isaac-ros-dnn-image-encoder \
     ros-humble-isaac-ros-tensor-rt \
-    ros-humble-rmw-cyclonedds-cpp \
     ros-humble-ament-cmake-clang-format \
     time \
     ros-humble-depthimage-to-laserscan \
@@ -50,41 +72,36 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list && \
 # -----------------------------
 # 2. ZED SDK Installation
 # -----------------------------
-RUN wget -q https://download.stereolabs.com/zedsdk/5.2/l4t36.4/jetsons -O zed_sdk.run && \
+COPY check-l4t-match.sh /usr/local/bin/check-l4t-match
+RUN chmod +x /usr/local/bin/check-l4t-match
+
+RUN wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 
 RUN python3 -m pip install --no-cache-dir numpy
-RUN sudo ln -s /usr/local/lib/python3.10/dist-packages/numpy/_core/include /usr/local/lib/python3.10/dist-packages/numpy/core/include
 
 
 # -----------------------------
 # 3. Clone Repo
 # -----------------------------
 WORKDIR /root/
-RUN git clone --recurse-submodules https://github.com/HumberASV/Loon-E.git
 
+RUN echo "Using Loon-E ref: ${LOONE_GIT_REF}" && \
+    git clone --recurse-submodules "${LOONE_REPO}" Loon-E && \
+    cd /root/Loon-E && \
+    git fetch --all --tags && \
+    git checkout "${LOONE_GIT_REF}" && \
+    git submodule update --init --recursive
+
+# This may fail if the clone didn't work
 WORKDIR /root/Loon-E/
 RUN mkdir -p /root/Loon-E/src
 
-RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
-  apt-get update && \
-  rosdep update && \
-  rosdep install --from-paths src --ignore-src -r -y && \
-  colcon build --parallel-workers 4 --symlink-install \
-    --event-handlers console_direct+ \
-    --base-paths src \
-    --cmake-clean-cache \
-    --cmake-args \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DZED_SDK_ROOT=/usr/local/zed \
-      -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
-      -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
-      --no-warn-unused-cli && \
-  rm -rf /var/lib/apt/lists/*"
-
-
+RUN /bin/bash -c "colcon build --symlink-install \
+    && source /opt/ros/humble/setup.bash \
+    && source install/setup.bash"
 # -----------------------------
-# 5. NGC Assets & Final Setup
+# 4. NGC Assets & Final Setup
 # -----------------------------
 ENV MAJOR_VERSION=3
 ENV MINOR_VERSION=1
@@ -97,10 +114,12 @@ RUN VERSION_REQ_URL="https://catalog.ngc.nvidia.com/api/resources/versions?orgNa
         rm quickstart.tar.gz; \
     fi
 
-RUN ln -sf /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 /usr/lib/aarch64-linux-gnu/libv4l2.so
-RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "source /root/Loon-E/install/setup.bash" >> /root/.bashrc &&\
-    echo "export ROS_DOMAIN_ID=5" >> /root/.bashrc
+RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
+    ln -sf /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 /usr/lib/aarch64-linux-gnu/libv4l2.so || true
 
+RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
+    echo "test -f /root/Loon-E/install/setup.bash && source /root/Loon-E/install/setup.bash" >> /root/.bashrc && \
+    echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /root/.bashrc && \
+    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /root/.bashrc
 
 WORKDIR /root/Loon-E
