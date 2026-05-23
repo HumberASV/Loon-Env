@@ -1,5 +1,18 @@
 #!/bin/bash
-
+#
+# The LoonE script is a convenient wrapper for managing the Docker environment for the Loon-E project.
+# Usage:
+#   LoonE [OPTIONS] [ZED_IMAGE_NAME] [LOON_E_IMAGE_NAME]
+# Options:
+#   -h, --help   show this help message and exit
+#   -s, --start  start the Docker container if it's not running
+#   --stop [SERVICE...]  stop compose services (zed, loone, or all)
+#   -e, --enter  enter the Docker container
+#   -b, --build   build the Docker image if it doesn't exist
+#   -r, --run     run Loon-E with the specified image, building and starting as needed
+#   -q, --quack   returns "Quack!" (because why not) This is not the same message as the help command for funsies.
+# If no options are provided, it defaults to a quick help message
+#
 # Copyright (c) 2026 Carson Fujita
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -20,29 +33,21 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-# The LoonE script is a convenient wrapper for managing the Docker environment for the Loon-E project.
 # Version
-LOONE_VERSION="3.0.1"
-# Usage:
-#   LoonE [OPTIONS] [IMAGE_NAME]
-# Options:
-#   -h, --help   show this help message and exit
-#   -s, --start  start the Docker container if it's not running
-#   --stop [SERVICE...]  stop compose services (zed, loone, or all)
-#   -e, --enter  enter the Docker container
-#   -b, --build   build the Docker image if it doesn't exist
-#   -r, --run     run Loon-E with the specified image, building and starting as needed
-#   -q, --quack   returns "Quack!" (because why not) This is not the same message as the help command for funsies.
-# If no options are provided, it defaults to a quick help message
+LOONE_VERSION="4.0.0"
 
-#---------------------- CONSTANTS ------------------
-# Use second argument as image name, default to setup_img
-IMAGE_NAME="${2:-${LOON_E_IMAGE:-loon-e:latest}}"
+# Names for Docker images and containers
+ZED_IMAGE_NAME="loon_zed_img"
+LOON_E_IMAGE_NAME="loon_e_img"
+ZED_CONTAINER_NAME="loon_zed_container"
+LOON_E_CONTAINER_NAME="loon_e_container"
 
-# Asset directory and dockerfile for builds
+# Asset directory and workspace directory with defaults
 ASSET_DIR="${ASSET_DIR:-/usr/share/Loon-Env}"
-DOCKERFILE="${DOCKERFILE:-$ASSET_DIR/LoonE/Dockerfile}"
+LOONE_WORKSPACE_DIR="${LOONE_WORKSPACE_DIR:-$HOME/LoonE_ws}"
+COMPOSE_FILE="$LOONE_WORKSPACE_DIR/docker/compose.yaml"
 
+# Global variables for build options
 BUILD_PROFILE=""
 BUILD_NO_CACHE=0
 
@@ -53,13 +58,12 @@ BUILD_NO_CACHE=0
 #   None: if help text is printed successfully.
 show_help() {
         cat <<'EOF'
-Usage: LoonE [IMAGE_NAME]
+Usage: LoonE [OPTIONS]
 
 The LoonE script is a convenient wrapper for managing the Docker environment for the Loon-E project. 
 It can build the Docker image, start the container, and enter it with a single command. :)
 
 Options:
-    IMAGE_NAME   optional image name (default: setup_img)
     -h, --help   show this help message and exit
     -s, --start  start the Docker container if it's not running
         --stop [SERVICE ...]  stop compose services
@@ -86,7 +90,6 @@ EOF
 # Defaults:
 #   Stops both zed and loone when no targets are provided.
 stop_services() {
-    local compose_file="$ASSET_DIR/compose.yaml"
     local targets=()
     local arg
 
@@ -124,7 +127,7 @@ stop_services() {
     done
 
     echo "Stopping services: ${deduped[*]}"
-    docker compose -f "$compose_file" stop "${deduped[@]}"
+    docker compose -f "$COMPOSE_FILE" stop "${deduped[@]}"
 }
 
 # Version: 3.0.0
@@ -172,7 +175,7 @@ build() {
                  ;;
         esac
     done
-
+    
 
     # Determine build profile based on options.
     if [ -z "$BUILD_PROFILE" ]; then
@@ -180,18 +183,17 @@ build() {
     fi
 
     # call compose build with the appropriate arguments
-    local compose_file="$ASSET_DIR/compose.yaml"
     echo "Building with profile: ${BUILD_PROFILE:-all}, cache: ${BUILD_CACHE:-enabled}, hardware config: ${BUILD_FOR_HARDWARE:+$BUILD_FOR_HARDWARE}"
     case "$BUILD_PROFILE" in
         zed)
-            docker compose -f "$compose_file" build $BUILD_CACHE --build-arg $BUILD_FOR_HARDWARE zed
+            docker compose -f "$COMPOSE_FILE" build $BUILD_CACHE --build-arg $BUILD_FOR_HARDWARE zed
             ;;
         loone)
 
-            docker compose -f "$compose_file" build $BUILD_CACHE --build-arg $BUILD_FOR_HARDWARE loone
+            docker compose -f "$COMPOSE_FILE" build $BUILD_CACHE --build-arg $BUILD_FOR_HARDWARE loone
             ;;
         "")
-            docker compose -f "$compose_file" build $BUILD_CACHE --build-arg $BUILD_FOR_HARDWARE
+            docker compose -f "$COMPOSE_FILE" build $BUILD_CACHE --build-arg $BUILD_FOR_HARDWARE
             ;;
         *)
             echo "Error: invalid build profile '$BUILD_PROFILE'."
@@ -199,7 +201,6 @@ build() {
             ;;
     esac
 }
-
 
 # Check whether the target container is currently running.
 # Version: 2.0.0
@@ -212,6 +213,16 @@ is_container_running() {
     else
         return 1 # Not running
     fi
+}
+
+# Start the Docker container using Docker Compose.
+# Version: 3.1.0
+# Returns:
+#   0: if the container starts successfully or is already running.
+#   1: if there is an error starting the container.
+start_container() {
+    echo "Starting containers..."
+    docker compose -f "$COMPOSE_FILE" up || { echo "Failed to start container 'zed'."; return 1; }
 }
 
 # Check whether the target Docker image exists locally.
@@ -278,7 +289,6 @@ setup_x11() {
 #   non-zero: if Docker Compose commands fail.
 run_services() {
     local no_cache="${1:-0}"
-    local compose_file="$ASSET_DIR/compose.yaml"
 
     setup_x11
     echo Building zed and loone containers...
@@ -288,11 +298,12 @@ run_services() {
         build || { echo "Build failed. Aborting."; return 1; }
     fi
     echo Starting services with Docker Compose...
-    docker compose -f "$compose_file" up -d || { echo "Failed to start services. Aborting."; return 1; }
+    docker compose -f "$COMPOSE_FILE" up -d || { echo "Failed to start services. Aborting."; return 1; }
 }
 
 # Parse the first CLI option and dispatch the matching command handler.
 # Version: 2.0.0
+# Update: 3.1.0 
 # Parameters:
 #   $1 (optional): command option flag to execute (default: none).
 # Returns:
@@ -301,9 +312,21 @@ run_services() {
 parse_arguments() {
     case "${1:-}" in
         -s|--start)
-            run_services
+            if is_container_running; then
+                echo "Container '$IMAGE_NAME' is already running."
+            else
+                echo "Container '$IMAGE_NAME' is not running. Starting it..."
+                start_container || exit 1
+            fi
             ;;
         --stop)
+            # Check if there are services
+            echo "Checking for running services to stop..."
+            services=$(docker ps -q)
+            if [ -z "$services" ]; then
+                echo "No running services found to stop."
+                exit 0
+            fi
             stop_services "${@:2}" || exit 1
             ;;
         -e|--enter)
@@ -311,6 +334,10 @@ parse_arguments() {
             ;;
         -b|--build)
             build "${@:2}" || exit 1
+            # Notify user of build completion and show resulting image(s)
+            echo "Build completed. Showing all images:"
+            docker images
+            exit 0
             ;;
         -h|--help)
             show_help

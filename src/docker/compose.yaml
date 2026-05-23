@@ -28,9 +28,10 @@ services:
   # Zedx Service
   zed:
     image: ${ZED_X_IMAGE:-zed-x:latest}
+    user: robo
     build:
       context: .
-      dockerfile: ${ZED_DOCKERFILE:-Zedx/Dockerfile}
+      dockerfile: ${WORKSPACE_DIR}/docker/Zedx/Dockerfile
       args:
         - ZED_SDK_VERSION=${ZED_SDK_VERSION:-5.2}
         - L4T_VERSION=${L4T_VERSION:-36.4}
@@ -47,16 +48,21 @@ services:
     gpus: all
     network_mode: host
     environment:
+      - QT_X11_NO_MITSHM=1
+      - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}
+      - XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-x11}
       - DISPLAY=${DISPLAY:-:1}
-      - XAUTHORITY=/root/.Xauthority:ro
+      - XAUTHORITY=/root/.Xauthority
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
       - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
       - CYCLONEDDS_URI=file:///root/cyclonedds.xml
       - HOST_L4T_RELEASE_FILE=/host-nv_tegra_release
+      - NVIDIA_DRIVER_CAPABILITIES=all
     volumes:
       - /dev:/dev
-      - /tmp:/tmp/
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /tmp/argus_socket:/tmp/argus_socket
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/
       - /usr/local/zed/resources:/usr/local/zed/resources
@@ -65,7 +71,10 @@ services:
       - /etc/nv_tegra_release:/host-nv_tegra_release:ro
       - ${HOME}/zed_docker_ai/:/usr/local/zed_docker_ai/
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
-      - ${CYCLONEDDS_CONFIG_PATH:-/home/carson/cyclonedds.xml}:/root/cyclonedds.xml:ro
+      - ${WORKSPACE_DIR}/src/zed_ws:/home/robo/zed_ws:ro
+      - ${ASSET_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
+      - /etc/passwd:/etc/passwd:ro
+      - /etc/group:/etc/group:ro
     command: >-
       /bin/bash -c "
       /usr/local/bin/check-l4t-match &&
@@ -77,13 +86,14 @@ services:
     image: ${LOON_E_IMAGE:-loon-e:latest}
     build:
       context: .
-      dockerfile: ${LOONE_DOCKERFILE:-LoonE/Dockerfile}
+      dockerfile: ${WORKSPACE_DIR}/docker/LoonE/Dockerfile
       args:
         - ZED_SDK_VERSION=${ZED_SDK_VERSION:-5.2}
         - L4T_VERSION=${L4T_VERSION:-36.4}
         - LOONE_REPO=${LOONE_REPO:-https://github.com/HumberASV/Loon-E.git}
         - LOONE_GIT_REF=${LOONE_GIT_REF:-main}
     runtime: nvidia
+    user: robo
     privileged: true
     network_mode: host
     stdin_open: true
@@ -108,7 +118,7 @@ services:
       - /home/robo:/home/robo
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /etc/nv_tegra_release:/host-nv_tegra_release:ro
-      - ${CYCLONEDDS_CONFIG_PATH:-/home/carson/cyclonedds.xml}:/root/cyclonedds.xml:ro
+      - ${ASSET_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
     deploy:
       resources:
         reservations:

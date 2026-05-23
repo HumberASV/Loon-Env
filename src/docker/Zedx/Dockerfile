@@ -87,8 +87,8 @@ RUN python3 -m pip install --no-cache-dir "numpy<2"
 # -----------------------------
 # 3. Set up ROS workspace
 # -----------------------------
-RUN mkdir -p /root/ros2_ws/src
-WORKDIR /root/ros2_ws/
+RUN mkdir -p /home/robo/ros2_ws/src
+WORKDIR /home/robo/ros2_ws/
 
 # -----------------------------
 # 4. Install wrapper for camera and examples
@@ -114,7 +114,7 @@ RUN echo "Using zed-ros2-examples ref: ${ZED_EXAMPLES_GIT_REF}" && \
 # 5. Build ROS workspace
 # -----------------------------
 
-WORKDIR /root/ros2_ws/
+WORKDIR /home/robo/ros2_ws/
 
 
 RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
@@ -152,9 +152,9 @@ RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
 
 RUN sudo apt install ros-$ROS_DISTRO-rmw-cyclonedds-cpp
 
-RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "test -f /root/ros2_ws/install/setup.bash && source /root/ros2_ws/install/setup.bash" >> /root/.bashrc && \
-    echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /root/.bashrc && \
-    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /root/.bashrc
+RUN echo "source /opt/ros/humble/setup.bash" >> /home/robo/.bashrc && \
+    echo "test -f /home/robo/ros2_ws/install/setup.bash && source /home/robo/ros2_ws/install/setup.bash" >> /home/robo/.bashrc && \
+    echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /home/robo/.bashrc && \
+    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /home/robo/.bashrc
 
-WORKDIR /root/ros2_ws
+WORKDIR /home/robo/ros2_ws
