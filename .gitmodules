@@ -1,12 +1,12 @@
-[submodule "zed_ros2_wrapper"]
-    path = src/zed_ws/src/zed_ros2_wrapper
-    url = https://github.com/HumberASV/zed-ros2-wrapper.git
-[submodule "zed_ros_examples"]
-    path = src/zed_ws/src/zed_ros_examples
-    url =  https://github.com/stereolabs/zed-ros2-examples.git
-[submodule "interfaces"]
-    path = src/zed_ws/src/interfaces
-    url = https://github.com/stereolabs/zed-ros2-interfaces.git
-[submodule "loon_e"]
-    path = src/loon_ws/src/loon_e
-    url = https://github.com/HumberASV/loon-e.git
+[submodule "src/zed_ws/src/zed_ros2_wrapper"]
+	path = src/zed_ws/src/zed_ros2_wrapper
+	url = https://github.com/HumberASV/zed-ros2-wrapper.git
+[submodule "src/zed_ws/src/zed_ros_examples"]
+	path = src/zed_ws/src/zed_ros_examples
+	url = https://github.com/stereolabs/zed-ros2-examples.git
+[submodule "src/zed_ws/src/interfaces"]
+	path = src/zed_ws/src/interfaces
+	url = https://github.com/stereolabs/zed-ros2-interfaces.git
+[submodule "src/loon_ws/src/loon_e"]
+	path = src/loon_ws/src/loon_e
+	url = https://github.com/HumberASV/loon-e.git
