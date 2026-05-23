@@ -73,6 +73,7 @@ Options:
   -i, --install-deps  Install required dependencies
   --dry-run         Show what would be done without making any changes
   --version         Show the version of the installer and exit
+  -r, --remove      Remove Loon-Env installation
 EOF
 }
 
@@ -272,6 +273,7 @@ parse_arguments() {
             -v|--verbose) VERBOSE=1 ;;
             -i|--install-deps) INSTALL_DEPS=1 ;;
             --dry-run) DRY_RUN=1 ;;
+            -r|--remove) remove_installation; exit 0 ;;
             *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
         esac
         shift
@@ -698,6 +700,23 @@ install_loon_env() {
         echo "Error: Failed to install Loon-Env assets." >&2
         exit 1
     fi
+}
+
+#################################
+# Remove Loon-Env installation by deleting the installation directory and main script
+# Globals:
+#  PATH_INSTALL
+#  LOON_E_SCRIPT_INSTALL
+# Arguments:
+#  None
+# Outputs:
+#  Deletes the installation directory and main script, effectively removing Loon-Env from the system
+###############################
+remove_loon_env() {
+    log "Removing Loon-Env installation..."
+    run 'sudo rm -rf '$PATH_INSTALL
+    run 'sudo rm -f '$LOONE_SCRIPT_INSTALL
+    echo "Loon-Env installation removed successfully. Sorry to see you go! (not actually sorry)"
 }
 
 # >>> Main Script <<<
