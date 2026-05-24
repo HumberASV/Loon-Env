@@ -208,7 +208,9 @@ Options:
     --verbose   enable verbose logging
     --purge     stop and remove all containers, images, and volumes associated with this project (use with caution!)
     --health    check health status of services
+    --kill-cache purges everything in the Docker build cache (use with caution!)
     --dry-run   print commands without executing them
+    --where_is  cd user to workspace directory
 
 Build options:
     zed          Builds only the `zed` service image. Accepts optional profile argument: `
@@ -600,6 +602,14 @@ health(){
 parse_arguments() {
     while [[ "$#" -gt 0 ]]; do
         case "$1" in
+            --where_is)
+                echo "Changing directory to workspace: $LOONE_WORKSPACE_DIR"
+                echo "This is where docker-compose.yaml and related files are located."
+                echo "Primary volume locations for the containers are also located here, so this is a good place to be!"
+                echo "Note: This does not start a shell in the workspace, it just changes the current working directory for this script to the workspace directory."
+                cd "$LOONE_WORKSPACE_DIR"
+                return 0
+                ;;
              --verbose)
                 VERBOSE=1
                 shift
