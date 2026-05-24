@@ -561,8 +561,8 @@ set_variables() {
 
     log "[Set Variables] Setting group permissions for $GROUP_NAME to access $PATH_INSTALL"
     run 'sudo chown -R :'$GROUP_NAME $PATH_INSTALL
-    log "[Set Variables] Done. Setting permissions to 644 for ~/.loon_env_setup.bash"
-    run 'chmod 644 ~/.loon_env_setup.bash'
+    log "[Set Variables] Done. Setting permissions to 755 for ~/.loon_env_setup.bash"
+    run 'chmod 755 ~/.loon_env_setup.bash'
     log "[Set Variables] Permissions set for ~/.loon_env_setup.bash"
     
     log "[Set Variables] Environment variable setup complete."
