@@ -873,6 +873,8 @@ install_config_mtu
 setup_workspace
 set_variables
 
+echo "Running MTU configuration script to set MTU to 1400 for zedx..."
+run 'sudo '$CONFIG_MTU_SCRIPT_INSTALL
 echo "Loon-Env installation complete! Please restart your terminal or run 'source ~/.bashrc' to start using Loon-Env."
 cat <<EOF
         QUACK!
