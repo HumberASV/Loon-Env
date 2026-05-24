@@ -1,0 +1,215 @@
+#!/bin/bash
+#
+# configMTU - A script to set MTU for network interfaces on Loon-Env
+#
+# Copyright (c) 2026 Carson Fujita
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+select_interface() {
+    local interfaces
+    local interface
+    local selection
+
+    mapfile -t interfaces < <(ip link show | grep '^[0-9]' | awk '{print $2}' | sed 's/:$//')
+    if [ ${#interfaces[@]} -eq 0 ]; then
+        echo "No network interfaces found." >&2
+        return 1
+    fi
+
+    echo "Available network interfaces:" >&2
+    PS3="Select interface: "
+    select interface in "${interfaces[@]}"; do
+        if [ -n "$interface" ]; then
+            selection="$interface"
+            break
+        else
+            echo "Invalid selection. Please try again." >&2
+        fi
+    done >&2
+
+    printf '%s' "$selection"
+}
+
+# Sets MTU temporarily for the current session (reverts after reboot)
+temporary_mtu() {
+    local interface
+    local mtu="${2:-9000}"
+    
+    interface=$(select_interface) || exit 1
+    
+    echo "Setting temporary MTU to $mtu on $interface..."
+    
+    # Check if interface exists
+    if ! ip link show "$interface" > /dev/null 2>&1; then
+        echo "Error: Interface '$interface' not found" >&2
+        echo "Available interfaces:" >&2
+        ip link show | grep '^[0-9]' | awk '{print "  " $2}' >&2
+        return 1
+    fi
+    
+    # Set the MTU
+    if sudo ip link set dev "$interface" mtu "$mtu"; then
+        echo "MTU set to $mtu on $interface"
+        
+        # Verify the change
+        local actual_mtu=$(ip link show "$interface" | grep -oP '(?<=mtu )\d+')
+        if [ "$actual_mtu" = "$mtu" ]; then
+            echo "Verification successful: MTU is now $mtu"
+            echo "Note: This setting will revert after a reboot. Use permanent_mtu() to make it persistent."
+            return 0
+        else
+            echo "Error: MTU verification failed. Expected $mtu but got $actual_mtu" >&2
+            return 1
+        fi
+    else
+        echo "Error: Failed to set MTU on $interface" >&2
+        return 1
+    fi
+}
+
+# Sets MTU permanently using Netplan configuration
+permanent_mtu() {
+    local interface
+    local mtu="${2:-9000}"
+    local netplan_dir="/etc/netplan"
+    local config_file=""
+    
+    interface=$(select_interface) || exit 1
+    
+    echo "Setting permanent MTU to $mtu on $interface via Netplan..."
+    
+    # Check if netplan is installed
+    if ! command -v netplan &> /dev/null; then
+        echo "Netplan not found. Installing netplan.io..." >&2
+        sudo apt-get update && sudo apt-get install -y netplan.io
+    fi
+    
+    # Check if interface exists
+    if ! ip link show "$interface" > /dev/null 2>&1; then
+        echo "Error: Interface '$interface' not found" >&2
+        echo "Available interfaces:" >&2
+        ip link show | grep '^[0-9]' | awk '{print "  " $2}' >&2
+        return 1
+    fi
+    
+    # Find or create the Netplan config file
+    if [ -d "$netplan_dir" ]; then
+        # Look for existing config file
+        config_file=$(sudo find "$netplan_dir" -maxdepth 1 -name "*.yaml" -o -name "*.yml" | head -1)
+        
+        if [ -z "$config_file" ]; then
+            # Create a new config file if none exists
+            config_file="$netplan_dir/60-loon-env-mtu.yaml"
+            echo "Creating new Netplan config file: $config_file"
+            sudo tee "$config_file" > /dev/null <<EOF
+network:
+  version: 2
+  ethernets:
+    $interface:
+      dhcp4: true
+      mtu: $mtu
+EOF
+        else
+            echo "Using existing Netplan config: $config_file"
+            
+            # Back up the original file
+            sudo cp "$config_file" "$config_file.backup.$(date +%Y%m%d_%H%M%S)"
+            echo "Backup created: $config_file.backup.*"
+            
+            # Add or modify the MTU setting
+            # This is a simple approach using sed; more complex configs may need special handling
+            if grep -q "^ *$interface:" "$config_file"; then
+                # Interface section exists, add mtu if not present
+                if ! grep -A 5 "^ *$interface:" "$config_file" | grep -q "mtu:"; then
+                    sudo sed -i "/^ *$interface:/a\\      mtu: $mtu" "$config_file"
+                else
+                    # Replace existing MTU value
+                    sudo sed -i "/^ *$interface:/,/^[^ ]/ s/mtu: [0-9]*/mtu: $mtu/" "$config_file"
+                fi
+            else
+                # No interface section, add it
+                sudo tee -a "$config_file" > /dev/null <<EOF
+
+  ethernets:
+    $interface:
+      dhcp4: true
+      mtu: $mtu
+EOF
+            fi
+        fi
+    else
+        echo "Error: Netplan directory not found at $netplan_dir" >&2
+        return 1
+    fi
+    
+    # Verify the config is valid YAML
+    echo "Validating Netplan configuration..."
+    if sudo netplan validate > /dev/null 2>&1; then
+        echo "Configuration validation passed"
+    else
+        echo "Error: Netplan configuration validation failed" >&2
+        echo "Restoring backup..." >&2
+        if [ -n "$config_file" ] && sudo test -f "$config_file.backup".*; then
+            sudo cp "$config_file.backup".* "$config_file"
+        fi
+        return 1
+    fi
+    
+    # Apply the configuration
+    echo "Applying Netplan configuration..."
+    if sudo netplan apply; then
+        echo "Configuration applied successfully"
+        
+        # Verify the change
+        sleep 1
+        local actual_mtu=$(ip link show "$interface" | grep -oP '(?<=mtu )\d+')
+        if [ "$actual_mtu" = "$mtu" ]; then
+            echo "Verification successful: MTU is now $mtu"
+            echo "This setting will persist after reboot."
+            return 0
+        else
+            echo "Warning: MTU verification shows $actual_mtu instead of $mtu" >&2
+            echo "This may be normal if the interface is still reconfiguring." >&2
+        fi
+    else
+        echo "Error: Failed to apply Netplan configuration" >&2
+        return 1
+    fi
+}
+
+main(){
+    echo "Loon-Env MTU Configuration Script"
+    echo "1) Set temporary MTU (reverts after reboot)"
+    echo "2) Set permanent MTU via Netplan"
+    read -rp "Select an option (1 or 2): " option
+    
+    case "$option" in
+        1)
+            temporary_mtu
+            ;;
+        2)
+            permanent_mtu
+            ;;
+        *)
+            echo "Invalid option. Please select 1 or 2." >&2
+            exit 1
+            ;;
+    esac
+}

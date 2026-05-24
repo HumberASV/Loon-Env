@@ -31,7 +31,9 @@ APP_NAME="Loon-Env"
 VERSION="4.0.0" # Change this on each release
 PATH_INSTALL="/opt/loon-env"
 LOONE_SCRIPT_INSTALL="/usr/local/bin/LoonE"
-LOONE_SOURCE="./src/scripts/LoonE"
+CONFIG_MTU_SCRIPT_INSTALL="/usr/local/bin/configMTU"
+SCRIPTS_SOURCE="./src/scripts"
+LOONE_SOURCE=$SCRIPTS_SOURCE/LoonE
 ASSETS_DIR="./src/assets"
 WORKSPACE_DIR="$HOME/LoonE_ws"
 GROUP_NAME="loon-env-users"
@@ -596,6 +598,9 @@ setup_workspace() {
 
     local src_dir="$WORKSPACE_DIR"
 
+    log "[Setup Workspace] updating git submodules for loon-env installation..."
+    run git submodule update --init --recursive
+
     log "[Setup Workspace] Creating ROS 2 workspace at $WORKSPACE_DIR..."
     run 'mkdir -p '$src_dir
     
@@ -765,6 +770,30 @@ install_loon_env() {
 }
 
 #################################
+# Install MTU configuration script to /usr/local/bin and make it executable
+# Globals:
+#  CONFIG_MTU_SCRIPT_INSTALL
+#  SCRIPTS_SOURCE
+#  GROUP_NAME
+# Arguments:
+#  None
+# Outputs:
+#  Copies the MTU configuration script to /usr/local/bin, sets group ownership and permissions
+install_config_mtu(){
+    log "[Install Config] Installing MTU configuration script to $CONFIG_MTU_SCRIPT_INSTALL"
+    
+    # check if exists already
+    if [[ -f "$CONFIG_MTU_SCRIPT_INSTALL" ]]; then
+        log "[Install Config] MTU configuration script already exists at $CONFIG_MTU_SCRIPT_INSTALL. Removing."
+        run 'sudo rm -f '$CONFIG_MTU_SCRIPT_INSTALL
+    fi
+    run 'sudo cp '$SCRIPTS_SOURCE'/mtu.sh '$CONFIG_MTU_SCRIPT_INSTALL
+    run 'sudo chmod 755 '$CONFIG_MTU_SCRIPT_INSTALL
+    run sudo chown :"$GROUP_NAME" "$CONFIG_MTU_SCRIPT_INSTALL"
+    log "[Install Config] MTU configuration script installed to $CONFIG_MTU_SCRIPT_INSTALL and made executable."
+}
+
+#################################
 # Remove Loon-Env installation by deleting the installation directory and main script
 # Globals:
 #  PATH_INSTALL
@@ -778,6 +807,7 @@ remove_loon_env() {
     log "Removing Loon-Env installation..."
     run 'sudo rm -rf '$PATH_INSTALL
     run 'sudo rm -f '$LOONE_SCRIPT_INSTALL
+    run 'sudo rm -f '$CONFIG_MTU_SCRIPT_INSTALL
     echo "Loon-Env installation removed successfully. Sorry to see you go! (not actually sorry)"
 }
 
@@ -839,6 +869,7 @@ require_non_root
 create_group_and_add_user
 installation
 install_loon_env
+install_config_mtu
 setup_workspace
 set_variables
 
