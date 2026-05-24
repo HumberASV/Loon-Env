@@ -31,7 +31,7 @@ APP_NAME="Loon-Env"
 VERSION="4.0.0" # Change this on each release
 PATH_INSTALL="/opt/loon-env"
 LOONE_SCRIPT_INSTALL="/usr/local/bin/LoonE"
-LOONE_SOURCE="./src/LoonE"
+LOONE_SOURCE="./src/scripts/LoonE"
 ASSETS_DIR="./src/assets"
 WORKSPACE_DIR="$HOME/LoonE_ws"
 GROUP_NAME="loon-env-users"
@@ -110,7 +110,7 @@ log() {
 # Globals:
 #  DRY_RUN
 # Arguments:
-#  cmd - The command to execute
+#  cmd - The command to execute as a string or array
 # Outputs:
 #  Executes the command if not in dry-run mode, otherwise prints it
 run() {
@@ -541,13 +541,14 @@ set_variables() {
         log "[Set Variables] Existing environment variable setup found. Skipping variable setup."
         
     else
-        run 'echo "export LOONE_FILES_DIR='$PATH_INSTALL' >>' ~/.loon_env_setup.bash
-        run 'echo "export LOONE_WORKSPACE_DIR='$WORKSPACE_DIR' >>' ~/.loon_env_setup.bash
-        run 'echo "export LOONE_SETUP_SCRIPT='$HOME'/.loon_env_setup.bash >> ~/.loon_env_setup.bash'
-        run 'echo "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp >> ~/.loon_env_setup.bash'
-        run 'echo "export ROS_DOMAIN_ID=0 >> ~/.loon_env_setup.bash'
-        run 'echo "export ROS_LOCALHOST_ONLY=0 >> ~/.loon_env_setup.bash'
-        run 'echo "export ZED_SDK_VERSION="'$ZED_VERSION'" >> ~/.loon_env_setup.bash'
+        log "[Set Variables] No existing environment variable setup found. Creating ~/.loon_env_setup.bash and exporting variables..."
+        run 'echo "export LOONE_FILES_DIR='$PATH_INSTALL'" >> ~/.loon_env_setup.bash'
+        run 'echo "export LOONE_WORKSPACE_DIR='$WORKSPACE_DIR'" >> ~/.loon_env_setup.bash'
+        run 'echo "export LOONE_SETUP_SCRIPT='$HOME'/.loon_env_setup.bash" >> ~/.loon_env_setup.bash'
+        run 'echo "export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp" >> ~/.loon_env_setup.bash'
+        run 'echo "export ROS_DOMAIN_ID=0" >> ~/.loon_env_setup.bash'
+        run 'echo "export ROS_LOCALHOST_ONLY=0" >> ~/.loon_env_setup.bash'
+        run 'echo "export ZED_SDK_VERSION='$ZED_VERSION'" >> ~/.loon_env_setup.bash'
         log "[Set Variables] Environment variables set and exported to ~/.loon_env_setup.bash"
     fi
     log "[Set Variables] Setting ~/.bashrc to source ~/.loon_env_setup.bash if it exists"
@@ -599,39 +600,94 @@ setup_workspace() {
     run 'mkdir -p '$src_dir
     
     log "[Setup Workspace] Moving ./src/loon_ws to $WORKSPACE_DIR/loon_ws if it exists..."
-    if [[ -d "./src/loon_ws" ]]; then
-        run mv "./src/loon_ws" "$WORKSPACE_DIR/loon_ws"
+    # ensure it is empty too
+    if [[ -d "./src/loon_ws" && ! $(ls -A ./src/loon_ws) ]]; then 
+        run cp -r "./src/loon_ws" "$WORKSPACE_DIR/loon_ws"
         log "[Setup Workspace] Moved loon_ws to workspace directory."
+    elif [[ -d "./src/loon_ws" && $(ls -A ./src/loon_ws) ]]; then
+        echo "[WARNING] Existing loon_ws found in ./src but it is not empty." >&2
+        while true; do
+            read -p "Do you want to overwrite the existing loon_ws in the workspace directory with the one in ./src? (y/n) " answer
+            if [[ "$answer" == "y" ]]; then
+                run rm -rf "$WORKSPACE_DIR/loon_ws/"
+                run cp -r "./src/loon_ws" "$WORKSPACE_DIR/loon_ws"
+                log "[Setup Workspace] Moved loon_ws to workspace directory."
+                break
+            elif [[ "$answer" == "n" ]]; then
+                log "[Setup Workspace] Skipping move of loon_ws to workspace directory."
+                break
+            else
+                echo "Invalid input. Please enter 'y' or 'n'." >&2
+            fi
+        done
     else
         echo "[WARNING] No existing loon_ws found in ./src. Skipping move." >&2
     fi
 
     log "[Setup Workspace] Downloading a ton of git repostiories for zed wrapper"
-    # TODO
-    run wget 'https://github.com/ros/xacro/archive/refs/tags/'${XACRO_VERSION}+'.tar.gz -O - | tar -xvz && mv xacro-' + ${XACRO_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/xacro'
-    run wget 'https://github.com/ros/diagnostics/archive/refs/tags/'${DIAGNOSTICS_VERSION}+'.tar.gz -O - | tar -xvz && mv diagnostics-' + ${DIAGNOSTICS_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/diagnostics'
-    run wget 'https://github.com/ament/ament_lint/archive/refs/tags/'${AMENT_LINT_VERSION}+'.tar.gz -O - | tar -xvz && mv ament_lint-' + ${AMENT_LINT_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/ament-lint'
-    run wget 'https://github.com/cra-ros-pkg/robot_localization/archive/refs/tags/'${ROBOT_LOCALIZATION_VERSION}+'.tar.gz -O - | tar -xvz && mv robot_localization-' + ${ROBOT_LOCALIZATION_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/robot-localization'
-    run wget 'https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/'${ZED_MSGS_VERSION}+'.tar.gz -O - | tar -xvz && mv zed-ros2-interfaces-' + ${ZED_MSGS_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/zed-ros2-interfaces'
-    run wget 'https://github.com/ros-drivers/nmea_msgs/archive/refs/tags/'${NMEA_MSGS_VERSION}+'.tar.gz -O - | tar -xvz && mv nmea_msgs-' + ${NMEA_MSGS_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/nmea_msgs'
-    run wget 'https://github.com/ros/angles/archive/refs/tags/'${ANGLES_VERSION}+'.tar.gz -O - | tar -xvz && mv angles-' + ${ANGLES_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/angles'
-    run wget 'https://github.com/ros2/rmw_cyclonedds/archive/refs/tags/'${RMW_CYCLONEDDS_VERSION} '.tar.gz -O - | tar -xvz && mv rmw_cyclonedds-' + ${RMW_CYCLONEDDS_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/rmw_cyclonedds'
-    run wget 'https://github.com/ros-geographic-info/geographic_info/archive/refs/tags/'${GEOGRAPHIC_INFO_VERSION} + '.tar.gz -O - | tar -xvz && mv geographic_info-' + ${GEOGRAPHIC_INFO_VERSION} +"$WORKSPACE_DIR"+'/zed_ws/src/geographic-info'
-    run wget 'https://github.com/pal-robotics/backward_ros/archive/refs/tags/'${BACKWARD_ROS_VERSION} + '.tar.gz -O - | tar -xvz && mv backward_ros-' + ${BACKWARD_ROS_VERSION} + "$WORKSPACE_DIR" + '/zed_ws/src/backward_ros' && \
-    run 'cp -r geographic-info/geographic_msgs/ ' + "$WORKSPACE_DIR" + '/zed_ws/src/geographic-info/ && \ rm -rf geographic-info'
+    # remove existing src except for zed_ros_examples interfaces and zed_ros2_wrapper
+    if [[ -d "./src/zed_ws" ]]; then
+        run 'find ./src/zed_ws/src -mindepth 1 -maxdepth 1 ! -name "zed_ros_examples" ! -name "zed_ros2_wrapper" ! -name "interfaces" -exec rm -rf {} +'
+        log "[Setup Workspace] Cleaned existing src directory while preserving zed_ros_examples and zed_ros2_wrapper"
+    else
+        log "[Setup Workspace] No existing zed_ws found in ./src. Skipping cleanup."
+    fi
+    run "wget -qO- https://github.com/ros/xacro/archive/refs/tags/${XACRO_VERSION}.tar.gz | tar -xvz && mv xacro-${XACRO_VERSION} ./src/zed_ws/src/xacro"
+    run "wget -qO- https://github.com/ros/diagnostics/archive/refs/tags/${DIAGNOSTICS_VERSION}.tar.gz | tar -xvz && mv diagnostics-${DIAGNOSTICS_VERSION} ./src/zed_ws/src/diagnostics"
+    run "wget -qO- https://github.com/ament/ament_lint/archive/refs/tags/${AMENT_LINT_VERSION}.tar.gz | tar -xvz && mv ament_lint-${AMENT_LINT_VERSION} ./src/zed_ws/src/ament-lint"
+    run "wget -qO- https://github.com/cra-ros-pkg/robot_localization/archive/refs/tags/${ROBOT_LOCALIZATION_VERSION}.tar.gz | tar -xvz && mv robot_localization-${ROBOT_LOCALIZATION_VERSION} ./src/zed_ws/src/robot-localization"
+    run "wget -qO- https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/${ZED_MSGS_VERSION}.tar.gz | tar -xvz && mv zed-ros2-interfaces-${ZED_MSGS_VERSION} ./src/zed_ws/src/zed-ros2-interfaces"
+    run "wget -qO- https://github.com/ros-drivers/nmea_msgs/archive/refs/tags/${NMEA_MSGS_VERSION}.tar.gz | tar -xvz && mv nmea_msgs-${NMEA_MSGS_VERSION} ./src/zed_ws/src/nmea_msgs"
+    run "wget -qO- https://github.com/ros/angles/archive/refs/tags/${ANGLES_VERSION}.tar.gz | tar -xvz && mv angles-${ANGLES_VERSION} ./src/zed_ws/src/angles"
+    run "wget -qO- https://github.com/ros2/rmw_cyclonedds/archive/refs/tags/${RMW_CYCLONEDDS_VERSION}.tar.gz | tar -xvz && mv rmw_cyclonedds-${RMW_CYCLONEDDS_VERSION} ./src/zed_ws/src/rmw_cyclonedds"
+    run "wget -qO- https://github.com/ros-geographic-info/geographic_info/archive/refs/tags/${GEOGRAPHIC_INFO_VERSION}.tar.gz | tar -xvz && mv geographic_info-${GEOGRAPHIC_INFO_VERSION} ./src/zed_ws/src/geographic-info"
+    run "wget -qO- https://github.com/pal-robotics/backward_ros/archive/refs/tags/${BACKWARD_ROS_VERSION}.tar.gz | tar -xvz && mv backward_ros-${BACKWARD_ROS_VERSION} ./src/zed_ws/src/backward_ros"
+    run "cp -r ./src/zed_ws/src/geographic-info/geographic_msgs/ ./src/zed_ws/src/geographic-msgs/ && rm -rf geographic-info"
 
     log "[Setup Workspace] Moving ./src/zed_ws to $WORKSPACE_DIR/zed_ws if it exists..."
-    if [[ -d "./src/zed_ws" ]]; then
+    if [[ -d "./src/zed_ws" && ! $(ls -A ./src/zed_ws) ]]; then
         run mv "./src/zed_ws" "$WORKSPACE_DIR/zed_ws"
         log "[Setup Workspace] Moved zed_ws to workspace directory."
+    elif [[ -d "./src/zed_ws" && $(ls -A ./src/zed_ws) ]]; then
+        echo "[WARNING] Existing zed_ws found in ./src but it is not empty." >&2
+        while true; do
+            read -p "Do you want to overwrite the existing zed_ws in the workspace directory with the one in ./src? (y/n) " answer
+            if [[ "$answer" == "y" ]]; then
+                run rm -rf "$WORKSPACE_DIR/zed_ws/"
+                run cp -r "./src/zed_ws" "$WORKSPACE_DIR/zed_ws"
+                log "[Setup Workspace] Moved zed_ws to workspace directory."
+                break
+            elif [[ "$answer" == "n" ]]; then
+                log "[Setup Workspace] Skipping move of zed_ws to workspace directory."
+                break
+            else
+                echo "Invalid input. Please enter 'y' or 'n'." >&2
+            fi
+        done
     else
         echo "[WARNING] No existing zed_ws found in ./src. Skipping move." >&2
     fi
 
     log "[Setup Workspace] Moving ./src/docker to $WORKSPACE_DIR/docker if it exists..."
-    if [[ -d "./src/docker" ]]; then
+    if [[ -d "./src/docker" && ! $(ls -A ./src/docker) ]]; then
         run mv "./src/docker" "$WORKSPACE_DIR/docker"
         log "[Setup Workspace] Moved docker to workspace directory."
+    elif [[ -d "./src/docker" && $(ls -A ./src/docker) ]]; then
+        echo "[WARNING] Existing docker found in ./src but it is not empty." >&2
+        while true; do
+            read -p "Do you want to overwrite the existing docker in the workspace directory with the one in ./src? (y/n) " answer
+            if [[ "$answer" == "y" ]]; then
+                run rm -rf "$WORKSPACE_DIR/docker/"
+                run cp -r "./src/docker" "$WORKSPACE_DIR/docker"
+                log "[Setup Workspace] Moved docker to workspace directory."
+                break
+            elif [[ "$answer" == "n" ]]; then
+                log "[Setup Workspace] Skipping move of docker to workspace directory."
+                break
+            else
+                echo "Invalid input. Please enter 'y' or 'n'." >&2
+            fi
+        done
     else
         echo "[WARNING] No existing docker found in ./src. Skipping move." >&2
     fi
@@ -658,6 +714,7 @@ install_loon_env() {
     run 'sudo mkdir -p ' $PATH_INSTALL/assets
 
     log "[Install ENV] Copying assets or overwriting to $PATH_INSTALL/assets"
+    run rm -rf $PATH_INSTALL/assets/*
     run 'sudo cp -r '$ASSETS_DIR'/.' $PATH_INSTALL/assets'/'
 
     # asset permissions to group and read/write for owner and group, read for others
@@ -668,11 +725,12 @@ install_loon_env() {
     log "[Install ENV] Loon-Env assets installed to $PATH_INSTALL/assets with permissions set."
 
     log "[Install ENV] Moving copy of Loon-Env script to $LOONE_SCRIPT_INSTALL"
-    run 'sudo mkdir -p "$(dirname '${LOONE_SCRIPT_INSTALL}')'
+    run 'sudo mkdir -p $(dirname '$LOONE_SCRIPT_INSTALL')'
     if [[ ! -f "$LOONE_SOURCE" ]]; then
         echo "Error: LoonE source not found at $LOONE_SOURCE" >&2
         exit 1
     fi
+    run 'sudo rm -f '$LOONE_SCRIPT_INSTALL
     run sudo cp "$LOONE_SOURCE" "$LOONE_SCRIPT_INSTALL"
     
     log "[Install ENV] Loon-Env script copied to $LOONE_SCRIPT_INSTALL"
@@ -776,9 +834,9 @@ require_non_root
 
 create_group_and_add_user
 installation
-set_variables
 install_loon_env
 setup_workspace
+set_variables
 
 echo "Loon-Env installation complete! Please restart your terminal or run 'source ~/.bashrc' to start using Loon-Env."
 cat <<EOF
