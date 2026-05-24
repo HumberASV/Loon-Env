@@ -1,5 +1,8 @@
 # Loon-Env
 
+> [!IMPORTANT]
+> ANY changes you make to the local ./Loon-Env directory will be reflected upon running the LoonEnv script, which will copy necessary files to the installation directory and set up the ROS 2 workspace.
+
 A script that sets up a environment for the Loon-E project.
 
 The LoonEnv script will perform the following tasks:

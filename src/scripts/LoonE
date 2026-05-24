@@ -23,13 +23,13 @@
 
 # Version
 APP_NAME="LoonE"
-VERSION="4.0.0"
+VERSION="4.1.1"
 
 # Names for Docker images and containers
-ZED_IMAGE_NAME="loon_zed_img"
-LOON_E_IMAGE_NAME="loon_e_img"
-ZED_CONTAINER_NAME="loon_zed_container"
-LOON_E_CONTAINER_NAME="loon_e_container"
+ZED_IMAGE_NAME="zed-x"
+LOON_E_IMAGE_NAME="loon-e"
+ZED_CONTAINER_NAME="zed-x"
+LOON_E_CONTAINER_NAME="loon-e"
 
 # Asset directory and workspace directory with defaults
 ASSET_DIR="${ASSET_DIR:-/usr/share/Loon-Env}"
@@ -206,6 +206,8 @@ Options:
     -q, --quack   what does this do? Try it and find out!
     -v, --version   show version information and exit
     --verbose   enable verbose logging
+    --purge     stop and remove all containers, images, and volumes associated with this project (use with caution!)
+    --health    check health status of services
     --dry-run   print commands without executing them
 
 Build options:
@@ -304,7 +306,7 @@ start() {
                     continue
                 fi
                 log "Starting ZED wrapper service..."
-                run "docker compose -f $COMPOSE_FILE up -d zed"
+                run "docker compose -f $COMPOSE_FILE up --build -d zed"
                 ;;
             loone)
                 is_service_running "loone"
@@ -313,7 +315,7 @@ start() {
                     continue
                 fi
                 log "Starting Loon-E service..."
-                run "docker compose -f $COMPOSE_FILE up -d loone"
+                run "docker compose -f $COMPOSE_FILE up --build -d loone"
                 ;;
             *)
                 echo "[Error] Unknown service '$service'." >&2
@@ -531,6 +533,60 @@ EOF
     esac
 }
 
+################################# 
+# Purge all Loon-Env Docker images and containers with confirmation prompt
+# Globals:
+#  COMPOSE_FILE - The path to the Docker Compose file
+# Arguments:
+#  None
+# Outputs:
+#  Prompts the user for confirmation, then purges all Docker images and containers related to
+#  Loon-Env if confirmed; otherwise, cancels the purge
+##################################
+purge_docker(){
+    while true; do
+        read -p "Are you sure you want to purge all Loon-Env Docker images and containers? This action cannot be undone. (y/N) " -n 1 -r
+        echo
+        if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+            log "Purging all Loon-Env Docker images and containers..."
+            run "docker compose -f $COMPOSE_FILE down --rmi all --volumes --remove-orphans"
+            break
+        else
+            log "Purge cancelled. No Docker images or containers were removed."
+            break
+        fi
+    done
+}
+
+purge_cache(){
+    while true; do
+        read -p "Are you sure you want to purge all Loon-Env Docker build cache? This action cannot be undone. (y/N) " -n 1 -r
+        echo
+        if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+            log "Purging all Loon-Env Docker build cache..."
+            run "docker builder prune --all --force"
+            break
+        else
+            log "Purge cancelled. No Docker build cache was removed."
+            break
+        fi
+    done
+}
+
+################################
+# Check health status of services defined in Docker Compose file
+# Globals:
+#  COMPOSE_FILE - The path to the Docker Compose file
+# Arguments:
+#  None
+# Outputs:
+#  Prints the health status of each service defined in the Docker Compose file to stdout
+##################################
+health(){
+    log "Checking health status of services..."
+    run "docker compose -f $COMPOSE_FILE ps"
+}
+
 
 ################################
 # Parses command-line arguments and dispatches to the appropriate function
@@ -586,6 +642,33 @@ parse_arguments() {
                 ;;
             -v|--version)
                 version
+                return 0
+                ;;
+            --purge)
+                purge_docker
+                return 0
+                ;;
+            --kill-cache)
+                purge_cache
+                return 0
+                ;;
+            --health)
+                is_service_running "zed"
+                zed_running=$?
+                is_service_running "loone"
+                loone_running=$?
+                is_image_built "$ZED_IMAGE_NAME"
+                zed_built=$?
+                is_image_built "$LOON_E_IMAGE_NAME"
+                loone_built=$?
+
+                printf "Service Health Status:\n"
+                printf "+-----------------+---------+---------+\n"
+                printf "| %-15s | %-7s | %-7s |\n" "Service" "Built" "Running"
+                printf "+-----------------+---------+---------+\n"
+                printf "| %-15s | %-7s | %-7s |\n" "ZED Wrapper" "$( [ $zed_built -eq 0 ] && echo Yes || echo No )" "$( [ $zed_running -eq 0 ] && echo Yes || echo No )"
+                printf "| %-15s | %-7s | %-7s |\n" "Loon-E"      "$( [ $loone_built -eq 0 ] && echo Yes || echo No )" "$( [ $loone_running -eq 0 ] && echo Yes || echo No )"
+                printf "+-----------------+---------+---------+\n"
                 return 0
                 ;;
             *)

@@ -75,13 +75,16 @@ RUN echo "run" && \
 # -----------------------------
 # 2. ZED SDK Installation
 # -----------------------------
-COPY check-l4t-match.sh /usr/local/bin/check-l4t-match
-RUN chmod +x /usr/local/bin/check-l4t-match
 
 RUN wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 
 RUN python3 -m pip install --no-cache-dir "numpy<2"
+
+RUN set -eux; \
+    if ! id -u robo >/dev/null 2>&1; then \
+        useradd --create-home --shell /bin/bash robo; \
+    fi
 
 
 # -----------------------------
@@ -116,22 +119,22 @@ RUN echo "Using zed-ros2-examples ref: ${ZED_EXAMPLES_GIT_REF}" && \
 
 WORKDIR /home/robo/ros2_ws/
 
-
-RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
-  apt-get update && \
-  rosdep update && \
-  rosdep install --from-paths src --ignore-src -r -y && \
-  colcon build --parallel-workers 4 --symlink-install \
-    --event-handlers console_direct+ \
-    --base-paths src \
-    --cmake-clean-cache \
-    --cmake-args \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DZED_SDK_ROOT=/usr/local/zed \
-      -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
-      -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
-      --no-warn-unused-cli && \
-  rm -rf /var/lib/apt/lists/*"
+# TODO: move this to a script because it can cause connection issues for remote work
+# RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
+#   apt-get update && \
+#   rosdep update && \
+#   rosdep install --from-paths src --ignore-src -r -y && \
+#   colcon build --parallel-workers 4 --symlink-install \
+#     --event-handlers console_direct+ \
+#     --base-paths src \
+#     --cmake-clean-cache \
+#     --cmake-args \
+#       -DCMAKE_BUILD_TYPE=Release \
+#       -DZED_SDK_ROOT=/usr/local/zed \
+#       -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
+#       -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
+#       --no-warn-unused-cli && \
+#   rm -rf /var/lib/apt/lists/*"
 
 # -----------------------------
 # 6. NGC Assets & Final Setup
@@ -153,7 +156,7 @@ RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
 RUN sudo apt install ros-$ROS_DISTRO-rmw-cyclonedds-cpp
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /home/robo/.bashrc && \
-    echo "test -f /home/robo/ros2_ws/install/setup.bash && source /home/robo/ros2_ws/install/setup.bash" >> /home/robo/.bashrc && \
+    # echo "test -f /home/robo/ros2_ws/install/setup.bash && source /home/robo/ros2_ws/install/setup.bash" >> /home/robo/.bashrc && \
     echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /home/robo/.bashrc && \
     echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /home/robo/.bashrc
 

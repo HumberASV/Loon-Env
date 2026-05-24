@@ -612,7 +612,8 @@ setup_workspace() {
     elif [[ -d "./src/loon_ws" && $(ls -A ./src/loon_ws) ]]; then
         echo "[WARNING] Existing loon_ws found in ./src but it is not empty." >&2
         while true; do
-            read -p "Do you want to overwrite the existing loon_ws in the workspace directory with the one in ./src? (y/n) " answer
+            read -n 1 -r -p  "Do you want to overwrite the existing loon_ws in the workspace directory with the one in ./src? (y/n) " answer 
+            echo
             if [[ "$answer" == "y" ]]; then
                 run rm -rf "$WORKSPACE_DIR/loon_ws/"
                 run cp -r "./src/loon_ws" "$WORKSPACE_DIR/loon_ws"
@@ -660,7 +661,8 @@ setup_workspace() {
     elif [[ -d "./src/zed_ws" && $(ls -A ./src/zed_ws) ]]; then
         echo "[WARNING] Existing zed_ws found in ./src but it is not empty." >&2
         while true; do
-            read -p "Do you want to overwrite the existing zed_ws in the workspace directory with the one in ./src? (y/n) " answer
+            read -n 1 -r -p "Do you want to overwrite the existing zed_ws in the workspace directory with the one in ./src? (y/n) " answer 
+            echo
             if [[ "$answer" == "y" ]]; then
                 run rm -rf "$WORKSPACE_DIR/zed_ws/"
                 run cp -r "./src/zed_ws" "$WORKSPACE_DIR/zed_ws"
@@ -684,7 +686,8 @@ setup_workspace() {
     elif [[ -d "./src/docker" && $(ls -A ./src/docker) ]]; then
         echo "[WARNING] Existing docker found in ./src but it is not empty." >&2
         while true; do
-            read -p "Do you want to overwrite the existing docker in the workspace directory with the one in ./src? (y/n) " answer
+            read -n 1 -r -p "Do you want to overwrite the existing docker in the workspace directory with the one in ./src? (y/n) " answer 
+            echo
             if [[ "$answer" == "y" ]]; then
                 run rm -rf "$WORKSPACE_DIR/docker/"
                 run cp -r "./src/docker" "$WORKSPACE_DIR/docker"
@@ -842,7 +845,7 @@ if [[ -f "/etc/os-release" ]]; then
 else
     # TODO: Add support for other operating systems in the future
     echo "Unable to detect operating system. This installer is designed for Ubuntu 22.04." >&2
-    read -p "Do you want to continue anyway? (y/N) " -n 1 -r
+    read  -p "Do you want to continue anyway? (y/N) " -n 1 -r
     echo
     if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
         echo "Installation aborted."
@@ -873,8 +876,13 @@ install_config_mtu
 setup_workspace
 set_variables
 
-echo "Running MTU configuration script to set MTU to 1400 for zedx..."
-run 'sudo '$CONFIG_MTU_SCRIPT_INSTALL
+read -p "MTU configuration is required for Loon-Env to function properly. Do you want to run the MTU configuration script now? (Y/n) " -n 1 -r
+echo
+if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+    run 'sudo '$CONFIG_MTU_SCRIPT_INSTALL
+else
+    log "Skipping MTU configuration script. You can run it later by running sudo $CONFIG_MTU_SCRIPT_INSTALL or configMTU"
+fi  
 
 echo "Loon-Env installation complete! Please restart your terminal or run 'source ~/.bashrc' to start using Loon-Env."
 cat <<EOF

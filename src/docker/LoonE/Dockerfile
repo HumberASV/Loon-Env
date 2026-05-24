@@ -72,13 +72,16 @@ RUN echo "run" && \
 # -----------------------------
 # 2. ZED SDK Installation
 # -----------------------------
-COPY check-l4t-match.sh /usr/local/bin/check-l4t-match
-RUN chmod +x /usr/local/bin/check-l4t-match
 
 RUN wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 
 RUN python3 -m pip install --no-cache-dir numpy
+
+RUN set -eux; \
+    if ! id -u robo >/dev/null 2>&1; then \
+        useradd --create-home --shell /bin/bash robo; \
+    fi
 
 
 # -----------------------------
