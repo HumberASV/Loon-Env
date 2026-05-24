@@ -31,7 +31,7 @@ services:
     user: robo
     build:
       context: .
-      dockerfile: ${WORKSPACE_DIR}/docker/Zedx/Dockerfile
+      dockerfile: ${LOONE_WORKSPACE_DIR}/docker/Zedx/Dockerfile
       args:
         - ZED_SDK_VERSION=${ZED_SDK_VERSION:-5.2}
         - L4T_VERSION=${L4T_VERSION:-36.4}
@@ -71,8 +71,8 @@ services:
       - /etc/nv_tegra_release:/host-nv_tegra_release:ro
       - ${HOME}/zed_docker_ai/:/usr/local/zed_docker_ai/
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
-      - ${WORKSPACE_DIR}/src/zed_ws:/home/robo/zed_ws:ro
-      - ${ASSET_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
+      - ${LOONE_WORKSPACE_DIR}/src/zed_ws:/home/robo/zed_ws:ro
+      - ${LOONE_FILES_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro
     command: >-
@@ -86,7 +86,7 @@ services:
     image: ${LOON_E_IMAGE:-loon-e:latest}
     build:
       context: .
-      dockerfile: ${WORKSPACE_DIR}/docker/LoonE/Dockerfile
+      dockerfile: ${LOONE_WORKSPACE_DIR}/docker/LoonE/Dockerfile
       args:
         - ZED_SDK_VERSION=${ZED_SDK_VERSION:-5.2}
         - L4T_VERSION=${L4T_VERSION:-36.4}
@@ -115,10 +115,10 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - /dev:/dev
       - /tmp:/tmp
-      - /home/robo:/home/robo
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /etc/nv_tegra_release:/host-nv_tegra_release:ro
-      - ${ASSET_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
+      - ${LOONE_FILES_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
+      - ${LOONE_WORKSPACE_DIR}/src/loone_ws:/home/robo/loone_ws:ro
     deploy:
       resources:
         reservations:
@@ -128,5 +128,5 @@ services:
               capabilities: [gpu]
     command: /bin/bash -c "/usr/local/bin/check-l4t-match &&
       source /opt/ros/humble/setup.bash &&
-      source /root/Loon-E/install/setup.bash &&
+      source /home/robo/loone_ws/install/setup.bash &&
       ros2 launch loon_e_coms coms_launch.py"
