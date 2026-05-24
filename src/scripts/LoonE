@@ -28,8 +28,8 @@ VERSION="4.1.1"
 # Names for Docker images and containers
 ZED_IMAGE_NAME="zed-x"
 LOON_E_IMAGE_NAME="loon-e"
-ZED_CONTAINER_NAME="zed-x"
-LOON_E_CONTAINER_NAME="loon-e"
+ZED_CONTAINER_NAME="docker-zed-1"
+LOON_E_CONTAINER_NAME="docker-loone-1"
 
 # Asset directory and workspace directory with defaults
 ASSET_DIR="${ASSET_DIR:-/usr/share/Loon-Env}"
@@ -152,11 +152,7 @@ is_service_running() {
             ;;
     esac
     
-    if docker ps --filter "name=^/${container_name}$" --filter "status=running" | grep -q "$container_name"; then
-        return 0 # Running
-    else
-        return 1 # Not running
-    fi
+    return $(docker ps --filter "status=running" | grep -q "$container_name")
 }
 
 ################################
@@ -308,7 +304,7 @@ start() {
                     continue
                 fi
                 log "Starting ZED wrapper service..."
-                run "docker compose -f $COMPOSE_FILE up --build -d zed"
+                run "docker compose -f $COMPOSE_FILE up -d zed"
                 ;;
             loone)
                 is_service_running "loone"
@@ -317,7 +313,7 @@ start() {
                     continue
                 fi
                 log "Starting Loon-E service..."
-                run "docker compose -f $COMPOSE_FILE up --build -d loone"
+                run "docker compose -f $COMPOSE_FILE up -d loone"
                 ;;
             *)
                 echo "[Error] Unknown service '$service'." >&2
@@ -389,23 +385,26 @@ enter() {
             zed)
                 is_service_running "zed"
                 if [ $? -ne 0 ]; then
-                    log "ZED wrapper service is not running. Cannot enter container for this service."
-                    continue
+                    echo "ZED wrapper service is not running. Cannot enter container for this service." >&2
+                    exit 1
                 fi
-                log "Entering ZED wrapper service container..."
+                echo "Entering ZED wrapper service container..."
                 run "docker exec -it $ZED_CONTAINER_NAME bash"
+                exit 0 # Exit after entering the first valid container to avoid trying to enter multiple containers in one command
                 ;;
             loone)
                 is_service_running "loone"
                 if [ $? -ne 0 ]; then
-                    log "Loon-E service is not running. Cannot enter container for this service."
-                    continue
+                    echo "[Error] Loon-E service is not running. Cannot enter container for this service." >&2
+                    exit 1
                 fi
-                log "Entering Loon-E service container..."
+                echo "Entering Loon-E service container..."
                 run "docker exec -it $LOON_E_CONTAINER_NAME bash"
+                exit 0 # Exit after entering the first valid container to avoid trying to enter multiple containers in one command
                 ;;
             *)
                 echo "[Error] Unknown service '$service'." >&2
+                exit 1
                 ;;
         esac
     done

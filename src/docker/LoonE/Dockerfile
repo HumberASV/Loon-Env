@@ -87,18 +87,18 @@ RUN set -eux; \
 # -----------------------------
 # 3. Clone Repo
 # -----------------------------
-WORKDIR /root/
+WORKDIR /home/robo/
 
 RUN echo "Using Loon-E ref: ${LOONE_GIT_REF}" && \
     git clone --recurse-submodules "${LOONE_REPO}" Loon-E && \
-    cd /root/Loon-E && \
+    cd /home/robo/Loon-E && \
     git fetch --all --tags && \
     git checkout "${LOONE_GIT_REF}" && \
     git submodule update --init --recursive
 
 # This may fail if the clone didn't work
-WORKDIR /root/Loon-E/
-RUN mkdir -p /root/Loon-E/src
+WORKDIR /home/robo/Loon-E/
+RUN mkdir -p /home/robo/Loon-E/src
 
 RUN /bin/bash -c "colcon build --symlink-install \
     && source /opt/ros/humble/setup.bash \
@@ -111,18 +111,28 @@ ENV MINOR_VERSION=1
 RUN VERSION_REQ_URL="https://catalog.ngc.nvidia.com/api/resources/versions?orgName=nvidia&teamName=isaac&name=isaac_ros_yolov8_assets&isPublic=true&pageNumber=0&pageSize=100&sortOrder=CREATED_DATE_DESC" && \
     LATEST_VERSION_ID=$(curl -s -H "Accept: application/json" "$VERSION_REQ_URL" | jq -r ".recipeVersions[] | .versionId as \$v | \$v | select(test(\"^\\\\d+\\\\.\\\\d+\\\\.\\\\d+$\")) | split(\".\") | {major: .[0]|tonumber, minor: .[1]|tonumber, patch: .[2]|tonumber} | select(.major == $MAJOR_VERSION and .minor <= $MINOR_VERSION) | \$v" | sort -V | tail -n 1) && \
     if [ -n "$LATEST_VERSION_ID" ]; then \
-        mkdir -p /root/Loon-E/src/isaac_ros_assets && \
+        mkdir -p /home/robo/Loon-E/src/isaac_ros_assets && \
         curl -LO --request GET "https://api.ngc.nvidia.com/v2/resources/nvidia/isaac/isaac_ros_yolov8_assets/versions/$LATEST_VERSION_ID/files/quickstart.tar.gz" && \
-        tar -xf quickstart.tar.gz -C /root/Loon-E/src/isaac_ros_assets && \
+        tar -xf quickstart.tar.gz -C /home/robo/Loon-E/src/isaac_ros_assets && \
         rm quickstart.tar.gz; \
     fi
 
 RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
     ln -sf /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 /usr/lib/aarch64-linux-gnu/libv4l2.so || true
 
-RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc && \
-    echo "test -f /root/Loon-E/install/setup.bash && source /root/Loon-E/install/setup.bash" >> /root/.bashrc && \
-    echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /root/.bashrc && \
-    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /root/.bashrc
 
-WORKDIR /root/Loon-E
+RUN colcon build --symlink-install \
+    --event-handlers console_direct+ \
+    --base-paths src \
+    --cmake-clean-cache \
+    --cmake-args \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DZED_SDK_ROOT=/usr/local/zed \
+      -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
+      -DCMAKE_CXX_FLAGS="-Wl,--allow-shlib-undefined" \
+      --no-warn-unused-cli
+
+RUN echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /home/robo/.bashrc && \
+    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /home/robo/.bashrc
+
+WORKDIR /home/robo/Loon-E
