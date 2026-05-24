@@ -36,6 +36,15 @@ ASSET_DIR="${ASSET_DIR:-/usr/share/Loon-Env}"
 LOONE_WORKSPACE_DIR="${LOONE_WORKSPACE_DIR:-$HOME/LoonE_ws}"
 COMPOSE_FILE="$LOONE_WORKSPACE_DIR/docker/compose.yaml"
 
+# Colors for stdout
+PRIMARY=$(tput sgr0)
+RED=$(tput setaf 9)
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+ORANGE=$(tput setaf 202)
+BLUE=$(tput setaf 4)
+BOLD=$(tput bold)
+
 # Global variables for build options
 BUILD_PROFILE=""
 BUILD_NO_CACHE=0
@@ -46,32 +55,68 @@ SERVICES=() # List of services to target for start/stop/enter commands
 
 # >>> Utility Functions <<<
 
-#################################
-# Logs a message if verbose mode is enabled
+#######################################
+# Logs to stdout if $VERBOSE true
 # Globals:
-#  VERBOSE
+# VERBOSE
+# GREEN
+# BOLD
+# PRIMARY
 # Arguments:
-#  msg - The message to log
-# Outputs:
-#  Prints the message to stdout if verbose mode is enabled
-#################################
+#   $* - the msg
+# Returns:
+# Nothing
+#######################################
 log() {
     if [[ "$VERBOSE" -eq 1 ]]; then
-        echo "[INFO] $@"
+        echo "${GREEN}${BOLD}[INFO] ${PRIMARY}$*"
     fi
 }
 
-#################################
-# Executes a command, respecting dry-run mode
+#######################################
+# Prints Error; does not exit
 # Globals:
-#  DRY_RUN
+# RED
+# BOLD
+# PRIMARY
 # Arguments:
-#  cmd - The command to execute
-# Outputs:
-#  Executes the command if not in dry-run mode, otherwise prints it
+#   $* - the msg
+# Returns:
+# Nothing
+#######################################
+error() {
+    echo "${RED}${BOLD}[ERROR] ${PRIMARY}$*" >&2
+}
+
+#######################################
+# Prints warning
+# Globals:
+# ORANGE
+# BOLD
+# PRIMARY
+# Arguments:
+#   $* - the msg
+# Returns:
+# Nothing
+#######################################
+warn() {
+    echo "${ORANGE}${BOLD}[WARN] ${PRIMARY}$*" >&2
+}
+
+#######################################
+# Runs a command unless $DRY_RUN is true then it prints it to sdtout
+# Globals:
+# YELLOW
+# BOLD
+# PRIMARY
+# Arguments:
+#   $1 - the command
+# Returns:
+# Either the string of the command or executes the command with eval
+#######################################
 run() {
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        echo "[DRY RUN] $@"
+        echo "${YELLOW}${BOLD}[DRY RUN] ${PRIMARY} $*"
     else
         eval "$@"
     fi
@@ -102,8 +147,7 @@ target_services(){
                     log "Added target: $arg"
                     ;;
                 *)
-                    echo "[Error] unknown stop target '$arg'." >&2
-                    echo "[Error] Allowed targets: zed, loone, all." >&2
+                    error "Unknown stop target '$arg'. Allowed targets: zed, loone, all."
                     return 1
                     ;;
             esac
@@ -148,7 +192,7 @@ is_service_running() {
             ;;
         *)
             # Let caller handle unknown services, but log a warning here for debugging purposes
-            echo "[WARN] Unknown service '$service'." >&2
+            warn "Unknown service '$service' passed to is_service_running function."
             ;;
     esac
     
@@ -186,41 +230,43 @@ is_image_built() {
 #  Prints usage information to stdout
 ###############################
 help() {
-    cat <<'EOF'
-Usage: LoonE [OPTIONS]
+    cat <<EOF
+${BOLD}Usage: LoonE ${YELLOW}[OPTIONS]
 
+${PRIMARY}
 The LoonE script is a convenient wrapper for managing the Docker environment for the Loon-E project. 
 It can build the Docker image, start the container, and enter it with a single command. :)
 
-Options:
-    -h, --help   show this help message and exit
-    -f, --faq  interactive FAQ to help you get started with Loon-E
-    -s, --start  starts specified service
-        --stop [SERVICE ...]  stop compose services
-    -e, --enter enters specified service container
-    -b, --build   build and run services
-    -q, --quack   what does this do? Try it and find out!
-    -v, --version   show version information and exit
-    --verbose   enable verbose logging
-    --purge     stop and remove all containers, images, and volumes associated with this project (use with caution!)
-    --health    check health status of services
-    --kill-cache purges everything in the Docker build cache (use with caution!)
-    --dry-run   print commands without executing them
-    --where_is  cd user to workspace directory
-
-Build options:
-    zed          Builds only the `zed` service image. Accepts optional profile argument: `
-    virtual` or `hardware`.
-    loone        Builds only the `loone` service image. Accepts optional profile argument
-    : `virtual` or `hardware`.
-    -n, --no-cache Use Docker build without cache. Supported with `--build`, `--build-zed`, and `--build-loone`.
-    -v, --virtual   Sets build profile to `virtual`
-    -h, --hardware      Sets build profile to local `zedx`
-
+Options:${YELLOW}
+    -h, --help   ${BLUE}show this help message and exit${YELLOW}
+    -f, --faq    ${BLUE}interactive FAQ to help you get started with Loon-E${YELLOW}
+    -s, --start  ${BLUE}starts specified service${YELLOW}
+        --stop [SERVICE ...]  ${BLUE}stop compose services${YELLOW}
+    -e, --enter ${BLUE}enters specified service container${YELLOW}
+    -b, --build   ${BLUE}build and run services${YELLOW}
+    -q, --quack   ${BLUE}what does this do? Try it and find out!${YELLOW}
+    -v, --version   ${BLUE}show version information and exit${YELLOW}
+    --verbose   ${BLUE}enable verbose logging${YELLOW}
+    --purge     ${BLUE}stop and remove all containers, images, and volumes associated with this project (use with caution!)${YELLOW}
+    --health    ${BLUE}check health status of services${YELLOW}
+    --kill-cache ${BLUE}purges everything in the Docker build cache (use with caution!)${YELLOW}
+    --dry-run   ${BLUE}print commands without executing them${YELLOW}
+    --where_is  ${BLUE}cd user to workspace directory${YELLOW}
+${BOLD}${PRIMARY}
+Build options: ${YELLOW}
+    zed          ${BLUE}Builds only the "zed" service image. Accepts optional profile argument: "
+    virtual" or "hardware".${YELLOW}
+    loone        ${BLUE}Builds only the "loone" service image. Accepts optional profile argument
+    : "virtual" or "hardware".${YELLOW}
+    -n, --no-cache ${BLUE}Use Docker build without cache. Supported with "--build", "--build-zed", and "--build-loone".${YELLOW}
+    -v, --virtual   ${BLUE}Sets build profile to "virtual"${YELLOW}
+    -h, --hardware      ${BLUE}Sets build profile to local "zedx"${YELLOW}
+${BOLD}${PRIMARY}
 Service options:
-    zed     Refers to the ZED wrapper service defined in the Docker Compose file.
-    loone   Refers to the Loon-E service defined in the Docker Compose file.
-    all     Refers to both the ZED wrapper and Loon-E services.
+    ${YELLOW}
+    zed     ${BLUE}Refers to the ZED wrapper service defined in the Docker Compose file.${YELLOW}
+    loone   ${BLUE}Refers to the Loon-E service defined in the Docker Compose file.${YELLOW}
+    all     ${BLUE}Refers to both the ZED wrapper and Loon-E services.${YELLOW}
 EOF
 }
 
@@ -316,7 +362,7 @@ start() {
                 run "docker compose -f $COMPOSE_FILE up -d loone"
                 ;;
             *)
-                echo "[Error] Unknown service '$service'." >&2
+                error "Unknown service '$service' passed to start function."
                 ;;
         esac
     done
@@ -358,7 +404,7 @@ stop() {
                 run "docker compose -f $COMPOSE_FILE stop loone"
                 ;;
             *)
-                echo "[Error] Unknown service '$service'." >&2
+                error "Unknown service '$service' passed to stop function."
                 ;;
         esac
     done
@@ -385,7 +431,7 @@ enter() {
             zed)
                 is_service_running "zed"
                 if [ $? -ne 0 ]; then
-                    echo "ZED wrapper service is not running. Cannot enter container for this service." >&2
+                    error "ZED wrapper service is not running. Cannot enter container for this service."
                     exit 1
                 fi
                 echo "Entering ZED wrapper service container..."
@@ -395,7 +441,7 @@ enter() {
             loone)
                 is_service_running "loone"
                 if [ $? -ne 0 ]; then
-                    echo "[Error] Loon-E service is not running. Cannot enter container for this service." >&2
+                    error "Loon-E service is not running. Cannot enter container for this service."
                     exit 1
                 fi
                 echo "Entering Loon-E service container..."
@@ -403,7 +449,7 @@ enter() {
                 exit 0 # Exit after entering the first valid container to avoid trying to enter multiple containers in one command
                 ;;
             *)
-                echo "[Error] Unknown service '$service'." >&2
+                error "Unknown service '$service' passed to enter function."
                 exit 1
                 ;;
         esac
@@ -427,14 +473,14 @@ build() {
     local with_cache=1
 
     if [ "$#" -eq 0 ]; then
-        echo "[Error] No build options specified. Please specify a build profile and target services." >&2
-        echo "[Error] Use '-h' or '--help' to see usage information." >&2
+        error "No build options specified. Please specify a build profile and target services."
+        error "Use '-h' or '--help' to see usage information."
         return 1
     fi
 
     if [[ "$1" != --* ]]; then
-        echo "[Error] Build options must be specified before target services." >&2
-        echo "[Error] Use '-h' or '--help' to see usage information." >&2
+        error "Build options must be specified before target services."
+        error "Use '-h' or '--help' to see usage information."
         return 1
     fi
 
@@ -451,7 +497,7 @@ build() {
         profile="ZED_WRAPPER_GIT_REF=zedx"
         log "Set build profile to 'zedx'"
     else
-        echo "[Error] Build profile is required. Please specify either '--virtual' or '--hardware'." >&2
+        error "Build profile is required. Please specify either '--virtual' or '--hardware'."
         return 1
     fi
 
@@ -469,7 +515,7 @@ build() {
                 run "docker compose -f $COMPOSE_FILE build $( [ $with_cache -eq 0 ] && echo '--no-cache' ) --build-arg $profile loone"
                 ;;
             *)
-                echo "[Error] Unknown service '$service'." >&2
+                error "Unknown service '$service' passed to build function."
                 ;;
         esac
     done
@@ -546,7 +592,7 @@ EOF
 ##################################
 purge_docker(){
     while true; do
-        read -p "Are you sure you want to purge all Loon-Env Docker images and containers? This action cannot be undone. (y/N) " -n 1 -r
+        read -p "Are you sure you want to purge all Loon-Env Docker images and containers? This action cannot be undone. ${GREEN}(y/N)${PRIMARY} " -n 1 -r
         echo
         if [[ "$REPLY" =~ ^[Yy]$ ]]; then
             log "Purging all Loon-Env Docker images and containers..."
@@ -561,7 +607,7 @@ purge_docker(){
 
 purge_cache(){
     while true; do
-        read -p "Are you sure you want to purge all Loon-Env Docker build cache? This action cannot be undone. (y/N) " -n 1 -r
+        read -p "Are you sure you want to purge all Loon-Env Docker build cache? This action cannot be undone. ${GREEN}(y/N)${PRIMARY} " -n 1 -r
         echo
         if [[ "$REPLY" =~ ^[Yy]$ ]]; then
             log "Purging all Loon-Env Docker build cache..."
@@ -671,18 +717,18 @@ parse_arguments() {
                 is_image_built "$LOON_E_IMAGE_NAME"
                 loone_built=$?
 
-                printf "Service Health Status:\n"
+                printf "${BLUE}${BOLD}Service Health Status:${PRIMARY}\n"
                 printf "+-----------------+---------+---------+\n"
                 printf "| %-15s | %-7s | %-7s |\n" "Service" "Built" "Running"
                 printf "+-----------------+---------+---------+\n"
-                printf "| %-15s | %-7s | %-7s |\n" "ZED Wrapper" "$( [ $zed_built -eq 0 ] && echo Yes || echo No )" "$( [ $zed_running -eq 0 ] && echo Yes || echo No )"
-                printf "| %-15s | %-7s | %-7s |\n" "Loon-E"      "$( [ $loone_built -eq 0 ] && echo Yes || echo No )" "$( [ $loone_running -eq 0 ] && echo Yes || echo No )"
+                printf "| %-15s | %-7s | %-7s |\n" "ZED Wrapper" "$( [ $zed_built -eq 0 ] && echo ${GREEN}Yes || echo ${RED}No )" "$( [ $zed_running -eq 0 ] && echo ${GREEN}Yes || echo ${RED}No )"
+                printf "| %-15s | %-7s | %-7s |\n" "Loon-E"      "$( [ $loone_built -eq 0 ] && echo ${GREEN}Yes || echo ${RED}No )" "$( [ $loone_running -eq 0 ] && echo ${GREEN}Yes || echo ${RED}No )"
                 printf "+-----------------+---------+---------+\n"
                 return 0
                 ;;
             *)
-                echo "[Error] Unknown option '$1'." >&2
-                echo "Use '-h' or '--help' to see usage information." >&2
+                error "Unknown option '$1'."
+                error "Use '-h' or '--help' to see usage information."
                 return 1
                 ;;
         esac
