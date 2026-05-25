@@ -36,7 +36,7 @@ CONFIG_MTU_SCRIPT_INSTALL="/usr/local/bin/configMTU"
 SCRIPTS_SOURCE="./src/tools/scripts"
 LOONE_SOURCE=$SCRIPTS_SOURCE/LoonE
 ASSETS_DIR="./src/assets"
-WORKSPACE_DIR="$HOME/LoonE_ws"
+WORKSPACE_DIR="/home/$(whoami)/LoonE_ws"
 GROUP_NAME="loon-env-users"
 
 
@@ -697,34 +697,36 @@ setup_workspace() {
     run 'mkdir -p '$WORKSPACE_DIR'/zed_ws'
     run 'mkdir -p '$WORKSPACE_DIR'/loon_ws'
     run 'mkdir -p '$WORKSPACE_DIR'/docker'
-
-
+    log $(ls -A $WORKSPACE_DIR/loon_ws)
+    log $(ls -A $WORKSPACE_DIR/zed_ws)
+    log $(ls -A $WORKSPACE_DIR/docker)
 
     log "[Setup Workspace] Moving$BLUE ./src/loon_ws$PRIMARY to $WORKSPACE_DIR/loon_ws if it exists..."
     # if $WORKSPACE_DIR/loon_ws is empty
     if [[ ! $(ls -A $WORKSPACE_DIR/loon_ws) ]]; then 
-        run cp -r "./src/loon_ws" "$WORKSPACE_DIR/loon_ws"
+        run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
         log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
     else # not empty
         warn "Existing loon_ws found in workspace directory but it is not empty."
         if confirm "Do you want to overwrite the existing loon_ws in the workspace directory with the one in ./src?"; then
             run rm -rf "$WORKSPACE_DIR/loon_ws/"
-            run cp -r "./src/loon_ws" "$WORKSPACE_DIR/loon_ws"
+            run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
             log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
         else
             log "[Setup Workspace] Skipping move of$BLUE loon_ws$PRIMARY to workspace directory."
         fi
     fi
 
+ 
     # if empty
     if [[ ! $(ls -A $WORKSPACE_DIR/zed_ws) ]]; then
         run 'git submodule update --init --recursive'
         download_dependencies_for_zed_wrapper
-         run cp -r "./src/zed_ws" "$WORKSPACE_DIR/zed_ws"
+         run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
     else #not empty
         warn "Existing$BLUE zed_ws$PRIMARY found in$BLUE $WORKSPACE_DIR/zed_ws $PRIMARY but it is not empty."
         if confirm "Do you want to overwrite the existing$BLUE zed_ws$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
-            run cp -r "./src/zed_ws" "$WORKSPACE_DIR/zed_ws"
+            run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
             download_dependencies_for_zed_wrapper # also cleans the src directory while preserving zed_ros_examples and zed_ros2_wrapper
             log "[Setup Workspace] Moved zed_ws to workspace directory."
         else
@@ -735,13 +737,13 @@ setup_workspace() {
 
     log "[Setup Workspace] Moving ./src/docker to $WORKSPACE_DIR/docker if it exists..."
     if [[ ! $(ls -A $WORKSPACE_DIR/docker) ]]; then
-        run cp -r "./src/docker" "$WORKSPACE_DIR/docker"
+        run cp -r "./src/docker" "$WORKSPACE_DIR"
         log "[Setup Workspace] Moved$BLUE docker$PRIMARY to workspace directory."
     else #not empty
         warn "Existing$BLUE docker$PRIMARY found in$BLUE $WORKSPACE_DIR/docker $PRIMARY but it is not empty."
         if confirm "Do you want to overwrite the existing$BLUE docker$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
             run rm -rf "$WORKSPACE_DIR/docker/"
-            run cp -r "./src/docker" "$WORKSPACE_DIR/docker"
+            run cp -r "./src/docker" "$WORKSPACE_DIR"
             log "[Setup Workspace] Moved$BLUE docker$PRIMARY to workspace directory."
         else
             log "[Setup Workspace] Skipping move of$BLUE docker$PRIMARY to workspace directory."
