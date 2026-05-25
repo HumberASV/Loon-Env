@@ -77,6 +77,7 @@ RUN echo "run" && \
 # -----------------------------
 WORKDIR /tmp
 
+# l4t enviroment variables are in the form RXX.YY.ZZ so we need to extract the major and minor version for the download link
 RUN L4T_VERSION_SHORT="$(printf '%s' "${L4T_VERSION#R}" | cut -d. -f1,2)" && \
     wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION_SHORT}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
