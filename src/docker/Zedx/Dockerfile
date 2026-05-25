@@ -75,8 +75,10 @@ RUN echo "run" && \
 # -----------------------------
 # 2. ZED SDK Installation
 # -----------------------------
+WORKDIR /tmp
 
-RUN wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION}/jetsons" -O zed_sdk.run && \
+RUN L4T_VERSION_SHORT="$(printf '%s' "${L4T_VERSION#R}" | cut -d. -f1,2)" && \
+    wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION_SHORT}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 
 RUN python3 -m pip install --no-cache-dir "numpy<2"
