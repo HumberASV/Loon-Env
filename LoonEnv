@@ -32,7 +32,7 @@ VERSION="4.0.0" # Change this on each release
 PATH_INSTALL="/opt/loon-env"
 LOONE_SCRIPT_INSTALL="/usr/local/bin/LoonE"
 CONFIG_MTU_SCRIPT_INSTALL="/usr/local/bin/configMTU"
-SCRIPTS_SOURCE="./src/scripts"
+SCRIPTS_SOURCE="./src/tools/scripts"
 LOONE_SOURCE=$SCRIPTS_SOURCE/LoonE
 ASSETS_DIR="./src/assets"
 WORKSPACE_DIR="$HOME/LoonE_ws"
@@ -794,9 +794,37 @@ install_config_mtu(){
         run 'sudo rm -f '$CONFIG_MTU_SCRIPT_INSTALL
     fi
     run 'sudo cp '$SCRIPTS_SOURCE'/configMTU '$CONFIG_MTU_SCRIPT_INSTALL
-    run 'sudo chmod 755 '$CONFIG_MTU_SCRIPT_INSTALL
+    run 'sudo chmod 754 '$CONFIG_MTU_SCRIPT_INSTALL
     run sudo chown :"$GROUP_NAME" "$CONFIG_MTU_SCRIPT_INSTALL"
     log "[Install Config] MTU configuration script installed to $CONFIG_MTU_SCRIPT_INSTALL and made executable."
+}
+
+
+#################################
+# Install LoonTools
+# Globals:
+#  PATH_INSTALL
+#  THIS_SCRIPT_DIR
+#  GROUP_NAME
+# Arguments:
+#  None
+# Outputs:
+# Copies the tools directory to the installation directory, sets group ownership and permissions
+#################################
+install_loon_tools() {
+    log "[Install Tools] Installing LoonTools to $PATH_INSTALL/tools"
+
+    # check if tools directory exists and is not empty
+    if [[ -d "$PATH_INSTALL/tools" && $(ls -A $PATH_INSTALL/tools) ]]; then
+        log "[Install Tools] Existing tools directory found at $PATH_INSTALL/tools and it is not empty. Removing existing tools."
+        run 'sudo rm -rf '$PATH_INSTALL/tools/*
+    fi
+
+    run 'sudo mkdir -p '$PATH_INSTALL/tools
+    run 'sudo cp -r '$THIS_SCRIPT_DIR'/tools/. '$PATH_INSTALL'/tools/'
+    run 'sudo chown -R :'$GROUP_NAME $PATH_INSTALL/tools
+    run 'sudo chmod -R 774 '$PATH_INSTALL/tools
+    log "[Install Tools] LoonTools installed to $PATH_INSTALL/tools with permissions set."
 }
 
 #################################
@@ -876,6 +904,7 @@ create_group_and_add_user
 installation
 install_loon_env
 install_config_mtu
+install_loon_tools
 setup_workspace
 set_variables
 

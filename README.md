@@ -54,4 +54,4 @@ Enter the repository directory, give the `LoonEnv` script execute permissions, a
 
 ## Help
 
-Inside this repo is a `wiki/` directory containing documentation for the Loon-Env repository. It includes a FAQ to help you get started with Loon-E, as well as detailed documentation on the installation process, troubleshooting, and more.
+Inside this repo is a `wiki/` directory containing documentation for the Loon-Env repository. 

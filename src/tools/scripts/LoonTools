@@ -1,0 +1,836 @@
+#!/bin/bash
+#
+# LoonTools - A collection of utility functions for Loon-Env
+#
+# MIT License
+#
+# Copyright (c) 2026 HumberASV
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+set -eo pipefail # Exit on error and handle errors in pipelines
+IFS=$'\n\t' # Handle spaces in filenames
+
+# Script Constants >>>
+
+VERSION=1.0.0
+
+# Installation paths and names
+GROUP_NAME="loon-env-users"
+PATH_INSTALL="/opt/loon-env"
+LOONE_SCRIPT_INSTALL="/usr/local/bin/LoonE"
+CONFIG_MTU_SCRIPT_INSTALL="/usr/local/bin/configMTU"
+SCRIPTS_SOURCE="./src/scripts"
+LOONE_SOURCE=$SCRIPTS_SOURCE/LoonE
+ASSETS_DIR="./src/assets"
+WORKSPACE_DIR="$HOME/LoonE_ws"
+GROUP_NAME="loon-env-users"
+
+
+# Colors for stdout
+PRIMARY=$(tput sgr0)
+RED=$(tput setaf 9)
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+ORANGE=$(tput setaf 202)
+BLUE=$(tput setaf 4)
+BOLD=$(tput bold)
+
+# Report Constants >>>
+
+## TYPES
+DIRECTORY_TYPE=0
+FILE_TYPE=1
+
+## Status
+MISSING=0
+INVALID=1
+VALID=2
+NOT_CHECKED=3
+
+#######################################
+# Dictionary to check for in environment
+# Globals:
+# USER
+# Format:
+#   
+# Dictionary value types:
+#   string, boolean | null , boolean | null
+# null means data not set because it has not been checked.
+#######################################
+declare -A REQUIRED_VARIABLES
+REQUIRED_VARIABLES=(
+    ["RMW_IMPLEMENTATION"]="rmw_cyclonedds_cpp"
+    ["ROS_DOMAIN_ID"]="0"
+    ["ROS_LOCALHOST_ONLY"]="0"
+    ["ZED_SDK_VERSION"]="5.1.0"
+    ["L4T_VERSION"]="36.4.2"
+    ["ROS_DISTRO"]="humble"
+    ["XAUTHORITY"]="/home/$USER/.Xauthority"
+)
+
+#################################
+# Dictionary to track variable status
+# Globals:
+# REQUIRED_VARIABLES
+# NOT_CHECKED
+# Format:
+#   "variable"="status"
+# Dictionary value types:
+#   $MISSING | $INVALID | $VALID | $NOT_CHECKED
+#################################
+declare -a REQUIRED_VARIABLE_STATUS
+for key in "${!REQUIRED_VARIABLES[@]}"; do
+    REQUIRED_VARIABLE_STATUS["$key"]="$NOT_CHECKED"
+done
+
+#######################################
+# Dictionary to check for in file structure
+# Globals:
+#  WORKSPACE_DIR
+#  DIRECTORY_TYPE
+#  FILE_TYPE
+# Format:
+#   "path/to/file_or_directory"=type
+# Dictionary value types:
+#   "$FILE_TYPE" | "$DIRECTORY_TYPE"
+#######################################
+declare -A CORRECT_FILE_STRUCTURE
+CORRECT_FILE_STRUCTURE=(
+    ["$WORKSPACE_DIR"]="$DIRECTORY_TYPE"
+    ["$WORKSPACE_DIR/zedx_ws"]="$DIRECTORY_TYPE"
+    ["$WORKSPACE_DIR/zedx_ws/src"]="$DIRECTORY_TYPE"
+    ["$WORKSPACE_DIR/loone_ws"]="$DIRECTORY_TYPE"
+    ["$WORKSPACE_DIR/loone_ws/src"]="$DIRECTORY_TYPE"
+    ["$WORKSPACE_DIR/docker/LoonE/Dockerfile"]="$FILE_TYPE"
+    ["$WORKSPACE_DIR/docker/ZedX/Dockerfile"]="$FILE_TYPE"
+    ["$WORKSPACE_DIR/docker/compose.yaml"]="$FILE_TYPE"
+)
+
+########################################
+# Dictionary to track file structure status
+# Globals:
+#  CORRECT_FILE_STRUCTURE
+#  NOT_CHECKED
+# Format:
+#   "path/to/file_or_directory"=status
+# Dictionary value types:
+#   $MISSING | $INVALID | $VALID | $NOT_CHECKED
+#########################################
+declare -A FILE_STRUCTURE_STATUS
+for key in "${CORRECT_FILE_STRUCTURE_KEYS[@]}"; do
+    FILE_STRUCTURE_STATUS["$key"]="$NOT_CHECKED"
+done
+
+#######################################
+# Required commands for LoonE to function
+# Globals:
+# NOT_CHECKED
+# Format:
+#   "command"=present?"
+# Dictionary value types:
+#  $VALID | $MISSING | $NOT_CHECKED
+#########################################
+declare -A required_commands
+REQUIRED_COMMANDS=(
+    ["apt-get"]="$NOT_CHECKED"
+    ["ca-certificates"]="$NOT_CHECKED"
+    ["curl"]="$NOT_CHECKED"
+    ["gnupg"]="$NOT_CHECKED"
+    ["gpg"]="$NOT_CHECKED"
+    ["lsb-release"]="$NOT_CHECKED"
+    ["wget"]="$NOT_CHECKED"
+    ["git"]="$NOT_CHECKED"
+    ["nvidia-smi"]="$NOT_CHECKED"
+    ["colcon"]="$NOT_CHECKED"
+)
+
+# <<< Report constants
+
+# <<< Script Constants
+
+# Script Arguments >>>
+SHIFT_ARGS_BY=0 # Used for shifting arguements
+VERBOSE=0 # Verbose mode
+DRY_RUN=0 # Dry running (debug)
+
+# <<< Script Arguments
+
+# <<< Utility Functions
+
+#######################################
+# Logs to stdout if $VERBOSE true
+# Globals:
+# VERBOSE
+# GREEN
+# BOLD
+# PRIMARY
+# Arguments:
+#   $* - the msg
+# Returns:
+# Nothing
+#######################################
+log() {
+    if [[ "$VERBOSE" -eq 1 ]]; then
+        echo "${GREEN}${BOLD}[INFO] ${PRIMARY}$*"
+    fi
+}
+
+#######################################
+# Prints Error; does not exit
+# Globals:
+# RED
+# BOLD
+# PRIMARY
+# Arguments:
+#   $* - the msg
+# Returns:
+# Nothing
+#######################################
+error() {
+    echo "${RED}${BOLD}[ERROR] ${PRIMARY}$*" >&2
+}
+
+#######################################
+# Prints warning
+# Globals:
+# ORANGE
+# BOLD
+# PRIMARY
+# Arguments:
+#   $* - the msg
+# Returns:
+# Nothing
+#######################################
+warn() {
+    echo "${ORANGE}${BOLD}[WARN] ${PRIMARY}$*" >&2
+}
+
+#######################################
+# Runs a command unless $DRY_RUN is true then it prints it to sdtout
+# Globals:
+# YELLOW
+# BOLD
+# PRIMARY
+# Arguments:
+#   $1 - the command
+# Returns:
+# Either the string of the command or executes the command with eval
+#######################################
+run() {
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        echo "${YELLOW}${BOLD}[DRY RUN] ${PRIMARY} $*"
+    else
+        eval "$@"
+    fi
+}
+
+#######################################
+# Checks if the required command exists and exits if not
+# Globals:
+# BLUE
+# PRIMARY
+# Arguments:
+#   $1 - the command
+# Returns:
+# Nothing, exits if commmand is missing
+#######################################
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || {
+        error Missing required command: ${BLUE} "$1" ${PRIMARY} Please install and retry.
+        exit 1
+    }
+}
+
+
+
+#######################################
+# Asks on stdout using read for confirmation
+# Globals:
+# BOLD
+# PRIMARY
+# REPLY
+# Arguments:
+#   $1 - prompt string
+# Returns:
+#   0 if yes
+#   1 if no
+#######################################
+confirm() {
+    local prompt="${1:-Are you sure?}"
+    local reply
+    while true; do
+        read -n 1 -r -p "${prompt} ${BOLD}[y/n]${PRIMARY}: "
+        echo 
+        case "$REPLY" in
+            [Yy]) return 0;;
+            [Nn]) return 1;;
+            *) printf "Please enter y or n.\n";;
+        esac
+    done
+}
+
+#########################################
+# Check if the script is run as root
+# Globals:
+#  EUID
+# Arguments:
+#  None
+# Outputs:
+#  Exits with an error message if run as root
+#########################################
+require_non_root() {
+    if [[ "$EUID" -eq 0 ]]; then
+        echo "This script must not be run as root. Please use a regular user account." >&2
+        exit 1
+    fi
+}
+
+# Lockfile Utility >>>
+
+#######################################
+# Create lock file to prevent concurrent installations
+# Globals:
+#  LOCKFILE
+# Arguments:
+#  None
+# Outputs:
+#  Writes the current process ID to the lock file
+#######################################
+create_lock() {
+    log "Creating installation lock at $LOCKFILE..."
+    run 'echo "$$" > "$LOCKFILE"'    
+}
+
+#########################################
+# Remove lock file on exit
+# Globals:
+#  LOCKFILE
+# Arguments:
+#  None
+# Outputs:
+#  Removes the lock file
+#########################################
+cleanup() {
+    log "Cleaning up installation lock..."
+    run rm -f "$LOCKFILE"
+}
+
+# <<< Lockfile Utility
+
+# Zed Utility Functions >>>
+
+#######################################
+# Parses zed version
+# Globals:
+# Arguments:
+#   None
+# Returns:
+# x.x.x version detected or nothing
+#######################################
+parse_zed_version(){
+    local ZED_VERSION=$(sudo cat /usr/local/zed/zed-config-version.cmake | grep "set(PACKAGE_VERSION \"" | sed -E 's/set\(PACKAGE_VERSION "(.*)"\)/\1/')
+    return $ZED_VERSION
+}
+
+#######################################
+# Determines Zed_x_daemon service status 
+# Globals:
+# Arguments:
+#   None
+# Returns:
+# Gets the status of offline, restarting, online 
+#######################################
+get_zed_daemon_status(){
+    # if we are in a container we don't have systemctl so we have to use the command directly
+    if [[ $(in_container) == true ]]; then
+        local output=$(sudo /usr/local/zed/zed_x_daemon --status 2>&1 || echo "offline")
+        if [[ "$output" == *"online"* ]]; then
+            echo "online"
+        elif [[ "$output" == *"restarting"* ]]; then
+            echo "restarting"
+        else
+            echo "offline"
+        fi
+    else
+        local status=$(systemctl is-active zed_x_daemon 2>/dev/null || echo "offline")
+        if [[ "$status" == "active" ]]; then
+            echo "online"
+        elif [[ "$status" == "activating" ]]; then
+            echo "restarting"
+        else
+            echo "offline"
+        fi
+    fi
+}
+
+#######################################
+# attempts to restart zed_x_daemon service 
+# Globals:
+# Arguments:
+#   None
+# Returns:
+# Nothing
+#######################################
+restart_zed_daemon(){
+    log "Attempting to restart Zed Daemon..."
+    # if we are in a container we don't have systemctl so we have to use the command directly
+    if [[ $(in_container) == true ]]; then
+        run "sudo /usr/local/zed/zed_x_daemon --restart"
+        return
+    else
+        run "sudo systemctl restart zed_x_daemon"
+    fi
+}
+
+
+###################################
+# Checks if zed daemon is online and attempts to restart if not
+# Globals:
+# Arguments:
+#   None
+# Returns:
+# 0 if online or successfully restarted, 1 if failed to restart
+###################################
+check_zed_daemon(){
+    local status=$(get_zed_daemon_status)
+    if [[ "$status" != "online" ]]; then
+        warn "Zed Daemon is not online. Attempting to restart..."
+        for i in {1..3}; do
+            log "Restart attempt $i..."
+            restart_zed_daemon
+            sleep 5 # Wait for a few seconds to allow the service to restart
+            status=$(get_zed_daemon_status)
+            if [[ "$status" != "online" ]]; then
+                error "Failed to restart Zed Daemon. Current status: $status"
+                continue
+            else
+                log "Zed Daemon restarted successfully and is now online."
+                return 0
+            fi
+        done
+    else
+        log "Zed Daemon is online."
+        return 0
+    fi
+}
+
+#######################################
+# checks if MTU settings are matching requirements for zedx wrapper
+# Globals:
+# Arguments:
+#   interface (default en01)
+#   force
+# Returns:
+# 0 - it does not match
+# 1 - it does match
+#######################################
+check_MTU(){}
+
+# <<< Zed Utility Functions
+
+# L4T Utility Functions >>>
+
+#######################################
+# Parses L4T version
+# Globals:
+# Arguments:
+#   None
+# Returns:
+# x.x.x version detected or nothing
+#######################################
+parse_l4t_version(){
+    local L4T_VERSION="$(sed -n 's/^# \(R[0-9]\+\).*, REVISION: \([0-9.]\+\).*/\1.\2/p' /etc/nv_tegra_release 2>/dev/null || echo "unknown")"
+    return $L4T_VERSION
+}
+
+
+# <<< L4T Utility Functions
+
+# X11 Utility Functions >>>
+
+
+#######################################
+# Checks if system configs allow for x11 port forwarding
+# Globals:
+# Arguments:
+#   None
+# Returns:
+# 0 - system does not allow port forwarding
+# 1- system does
+#######################################
+can_forward_x11(){}
+
+
+# <<< X11 Utility Functions
+
+# LoonENV >>>
+
+########################################
+# Checks if the global variables are set and valid
+# Uses the REQUIRED_VARIABLES array to determine what should be set and if it should be a specific value
+# Globals:
+#  REQUIRED_VARIABLES
+#  NOT_CHECKED
+#  MISSING
+#  INVALID
+#  VALID
+# Arguments:
+#  none
+# Outputs:
+# modified REQUIRED_VARIABLES_STATUS with missing, valid, invalid status
+# 
+########################################
+check_variables(){
+    log "Checking required environment variables..."
+    for var in "${!REQUIRED_VARIABLES[@]}"; do
+        log "Checking variable $BLUE $var $PRIMARY..."
+        local expected_value="${REQUIRED_VARIABLES[$var]}"
+        local actual_value=$(printenv "$var" 2>/dev/null)
+        log "Expected value: $GREEN $expected_value $PRIMARY"
+
+        if [[ "$expected_value" == "$actual_value" ]]; then
+            log "Variable $GREEN $var $PRIMARY is valid."
+            REQUIRED_VARIABLE_STATUS["$var"]="$VALID"
+        elif [[ -z "$actual_value" ]]; then
+            log "Variable $RED $var $PRIMARY is missing."
+            REQUIRED_VARIABLE_STATUS["$var"]="$MISSING"
+        else
+            log "Variable $ORANGE $var $PRIMARY is invalid. Actual value: $RED $actual_value $PRIMARY"
+            REQUIRED_VARIABLE_STATUS["$var"]="$INVALID"
+        fi
+    done
+}
+
+########################################
+# Checks the $WORKSPACE_DIR for missing directories or files
+# Uses the FILE_STRUCTURE_MAP to determine what should be there and if it is a file or directory
+# Globals:
+#   FILE_STRUCTURE_MAP
+# Arguments:
+# none
+# Outputs:
+# modified FILE_STRUCTURE_MAP with missing and invalid status
+########################################
+check_file_structure(){
+    log "Checking file structure in $WORKSPACE_DIR..."
+    for path in "${!CORRECT_FILE_STRUCTURE[@]}"; do
+        local expected_type="${CORRECT_FILE_STRUCTURE[$path]}"
+        if [[ ! -e "$path" ]]; then
+            log "Path $RED $path $PRIMARY is missing."
+            FILE_STRUCTURE_STATUS["$path"]="$MISSING"
+        elif [[ "$expected_type" -eq "$DIRECTORY_TYPE" && ! -d "$path" ]]; then
+            log "Path $ORANGE $path $PRIMARY is invalid. Expected a directory but found a file."
+            FILE_STRUCTURE_STATUS["$path"]="$INVALID"
+        elif [[ "$expected_type" -eq "$FILE_TYPE" && ! -f "$path" ]]; then
+            log "Path $ORANGE $path $PRIMARY is invalid. Expected a file but found a directory."
+            FILE_STRUCTURE_STATUS["$path"]="$INVALID"
+        else
+            log "Path $GREEN $path $PRIMARY is valid."
+            FILE_STRUCTURE_STATUS["$path"]="$VALID"
+        fi
+    done
+}
+
+# <<< LoonEnv
+
+
+# Diagnosis Functions >>>
+
+########################################
+# Runs all diagnosis functions and prints results to stdout
+# Globals:
+#  none
+# Arguments:
+#  none
+# Outputs:
+# Prints results of diagnosis functions to stdout and exits with error if any problems are detected
+########################################
+diagnose_problems(){
+    check_variables
+    check_file_structure
+    check_commands
+    check_zed_daemon
+    # Print summary of results
+    echo "Diagnosis Summary:"
+
+    echo "${BOLD}Environment Variables:${PRIMARY}"
+    for var in "${!REQUIRED_VARIABLES[@]}"; do
+        local status="${REQUIRED_VARIABLE_STATUS[$var]}"
+        if [[ "$status" -eq "$VALID" ]]; then
+            echo "  $GREEN $var: Valid $PRIMARY"
+        elif [[ "$status" -eq "$MISSING" ]]; then
+            echo "  $RED $var: Missing $PRIMARY"
+        elif [[ "$status" -eq "$INVALID" ]]; then
+            echo "  $ORANGE $var: Invalid (actual value: ${!var}) $PRIMARY"
+        else
+            echo "  $YELLOW $var: Not Checked $PRIMARY"
+        fi
+    done
+
+    echo "${BOLD}File Structure:${PRIMARY}"
+    for path in "${!CORRECT_FILE_STRUCTURE[@]}"; do
+        local status="${FILE_STRUCTURE_STATUS[$path]}"
+        if [[ "$status" -eq "$VALID" ]]; then
+            echo "  $GREEN $path: Valid $PRIMARY"
+        elif [[ "$status" -eq "$MISSING" ]]; then
+            echo "  $RED $path: Missing $PRIMARY"
+        elif [[ "$status" -eq "$INVALID" ]]; then
+            echo "  $ORANGE $path: Invalid (expected type: ${CORRECT_FILE_STRUCTURE[$path]}) $PRIMARY"
+        else
+            echo "  $YELLOW $path: Not Checked $PRIMARY"
+        fi
+    done
+
+    echo "${BOLD}Commands:${PRIMARY}"
+    for cmd in "${!REQUIRED_COMMANDS[@]}"; do
+        local status="${REQUIRED_COMMANDS[$cmd]}"
+        if [[ "$status" -eq "$VALID" ]]; then
+            echo "  $GREEN $cmd: Available $PRIMARY"
+        elif [[ "$status" -eq "$MISSING" ]]; then
+            echo "  $RED $cmd: Missing $PRIMARY"
+        else
+            echo "  $YELLOW $cmd: Not Checked $PRIMARY"
+        fi
+    done
+}
+
+########################################
+# Interates over $REQUIRED_COMMANDS to determine any missing dependencies
+# Globals:
+# $REQUIRED_COMMANDS
+# NOT_CHECKED
+# MISSING
+# VALID
+# Arguments:
+#  none
+# Outputs:
+#  modified $REQUIRED_COMMANDS with missing and valid status
+########################################
+check_commands(){
+    log "Checking for required commands..."
+    local missing_commands=()
+    for cmd in "${!REQUIRED_COMMANDS[@]}"; do
+        log "Checking command $BLUE $cmd $PRIMARY..."
+        if command -v "$cmd" >/dev/null 2>&1; then
+            log "Command $GREEN $cmd $PRIMARY is available."
+            REQUIRED_COMMANDS["$cmd"]="$VALID"
+        else
+            log "Command $RED $cmd $PRIMARY is missing."
+            REQUIRED_COMMANDS["$cmd"]="$MISSING"
+            missing_commands+=("$cmd")
+        fi
+    done
+}
+
+# <<< Diagnosis Functions
+
+#######################################
+# Detects if in a container environment
+# Globals:
+# Arguments:
+#   None
+# Returns:
+# 0 if in container, 1 if not
+#######################################
+in_container() {
+    if [[ $(printenv "CONTAINER" 2>/dev/null) == "true" ]]; then
+        return 0
+    fi
+    if [ -f "/.dockerenv" ]; then
+        return 0
+    fi
+    if grep -qE '/docker|/lxc|/kubepods' /proc/1/cgroup 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+################################
+# Attempts to build colcon workspace
+# Globals:
+# Arguments:
+#   service - loone or zed
+# Outputs:
+# Runs colcon build with appropriate arguments for LoonE
+################################
+build_colcon(){
+    local service="${1:-loone}"
+    if [[ $(in_container) == 0 ]]; then
+        log "Running build commands for container environment..."
+
+        if [[ "$service" == "loone" ]]; then
+            log "Running build commands for LoonE service..."
+            # it's the same rn but we might want different build args for the zed workspace in the future
+            # so keeping it separate for now
+            run /bin/bash -c "source /opt/ros/humble/setup.bash && \
+            apt-get update && \
+            rosdep update && \
+            rosdep install --from-paths src --ignore-src -r -y && \
+            colcon build --parallel-workers 4 --symlink-install \
+                --event-handlers console_direct+ \
+                --base-paths src \
+                --cmake-clean-cache \
+                --cmake-args \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DZED_SDK_ROOT=/usr/local/zed \
+                -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
+                -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
+                --no-warn-unused-cli && \
+            rm -rf /var/lib/apt/lists/*"
+        elif [[ "$service" == "zed" ]]; then
+            log "Running build commands for ZedX service..."
+            run /bin/bash -c "source /opt/ros/humble/setup.bash && \
+            apt-get update && \
+            rosdep update && \
+            rosdep install --from-paths src --ignore-src -r -y && \
+            colcon build --parallel-workers 4 --symlink-install \
+                --event-handlers console_direct+ \
+                --base-paths src \
+                --cmake-clean-cache \
+                --cmake-args \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DZED_SDK_ROOT=/usr/local/zed \
+                -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
+                -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
+                --no-warn-unused-cli && \
+            rm -rf /var/lib/apt/lists/*"
+        else # not a valid service
+            error "Unknown service: $BLUE $service $PRIMARY. Valid options are 'loone' or 'zed'."
+            exit 1
+        fi
+        
+    else # if not in container
+       error "Colcon build should be run inside the container environment. Please run this command after entering the container."
+       exit 1
+    fi
+}
+
+# MAIN FUNCTIONS >>>
+
+usage() {
+    cat << EOF
+Usage: $(basename "$0") [options]
+
+Options:
+    -d, --wtf, --doctor   Run diagnostics to check for common issues
+    -c, --colcon          Build the colcon workspace (should be run inside container)
+    -h, --help      Show help
+    -v, --verbose   Enable verbose mode
+    --dry-run       Do not execute changes
+    --version       print version
+EOF
+}
+
+#######################################
+# Parses arguments for script running
+# Globals:
+# VERBOSE
+# DRY_RUN
+# VERSION
+# Arguments:
+#   $@ Arguments to parse
+# Returns:
+# Nothing
+#######################################
+parse_runtime_arguments() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -v|--verbose)
+                VERBOSE=1
+                log Yapping mode activiated!
+                SHIFT_ARGS_BY=$((SHIFT_ARGS_BY + 1))
+                shift
+                ;;
+            --dry-run)
+                DRY_RUN=1
+                log All bark no bite mode running!
+                SHIFT_ARGS_BY=$((SHIFT_ARGS_BY + 1))
+                shift
+                ;;
+            -h|help)
+                usage
+                exit 0
+                ;;
+            --version)
+                echo v"$VERSION"
+                exit 0
+                ;;
+            *)
+                error "Unknown option $1"
+                exit 1
+                ;;
+        esac
+    done
+}
+
+#######################################
+# Parses arguments related to script function
+# Globals:
+# NONE
+# Arguments:
+#   $@ Arguments to parse
+# Returns:
+# Nothing
+#######################################
+parse_functional_arguments(){
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -d|--wtf|--doctor)
+            diagnose_problems
+            exit 0
+            ;;
+            -c|--colcon)
+            build_colcon
+            exit 0
+        *)
+            error "Unknown function $1"
+            exit 1;
+            ;;
+        esac
+    done
+}
+
+
+# >>> MAIN <<< #
+main () {
+    parse_arguments $@
+    
+    log "Checking for existing installation lock..."
+
+    # Check for existing installation lock
+    # Put here to run immediately before any significant operations to save time
+    if [[ -f "$LOCKFILE" ]]; then
+        echo "Another process is already in progress. Please wait for it to finish." >&2
+        exit 1
+    fi
+    log "No existing installation lock found. Creating installation lock..."
+
+    # Prevent Concurrency Issues
+    create_lock
+
+    # Set trap to clean up lock file on exit
+    trap cleanup EXIT
+
+    # Code for processes go after here
+    parse_functional_arguments ${@:SHIFT_ARGS_BY}
+}
+
+
+main $@
