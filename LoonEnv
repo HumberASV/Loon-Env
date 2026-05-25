@@ -30,6 +30,7 @@ IFS=$'\n\t' # Handle spaces in filenames
 APP_NAME="Loon-Env"
 VERSION="4.0.0" # Change this on each release
 PATH_INSTALL="/opt/loon-env"
+LOONTOOLS_INSTALL="/usr/local/bin/LoonTools"
 LOONE_SCRIPT_INSTALL="/usr/local/bin/LoonE"
 CONFIG_MTU_SCRIPT_INSTALL="/usr/local/bin/configMTU"
 SCRIPTS_SOURCE="./src/tools/scripts"
@@ -45,6 +46,15 @@ VERBOSE=0
 DRY_RUN=0
 LOCKFILE="/tmp/loon-env-install.lock"
 INSTALL_DEPS=0
+
+# Colors for stdout
+PRIMARY=$(tput sgr0)
+RED=$(tput setaf 9)
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+ORANGE=$(tput setaf 202)
+BLUE=$(tput setaf 4)
+BOLD=$(tput bold)
 
 # Variables to hold detected versions
 ZED_SDK_VERSION="5.2" #Default
@@ -103,8 +113,38 @@ version() {
 #################################
 log() {
     if [[ "$VERBOSE" -eq 1 ]]; then
-        echo "[INFO] $@"
+        echo "${GREEN}${BOLD}[INFO] ${PRIMARY}$*"
     fi
+}
+
+#################################
+# Prints an error message to stderr
+# Globals:
+#  RED
+#  BOLD
+#  PRIMARY
+# Arguments:
+#  msg - The message to log
+# Outputs:
+#  Prints the message to stderr
+#################################
+error() {
+    echo "${RED}${BOLD}[ERROR] ${PRIMARY}$*" >&2
+}
+
+#################################
+# Prints a warning message to stderr
+# Globals:
+#  ORANGE
+#  BOLD
+#  PRIMARY
+# Arguments:
+#  msg - The message to log
+# Outputs:
+#  Prints the message to stderr
+#################################
+warn() {
+    echo "${ORANGE}${BOLD}[WARN] ${PRIMARY}$*" >&2
 }
 
 #################################
@@ -117,13 +157,40 @@ log() {
 #  Executes the command if not in dry-run mode, otherwise prints it
 run() {
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        echo "[DRY RUN] $@"
+        echo "${YELLOW}${BOLD}[DRY RUN] ${PRIMARY}$*"
     else
         eval "$@"
     fi
 }
 
 # >>> Utility Functions <<<
+
+
+#######################################
+# Asks on stdout using read for confirmation
+# Globals:
+# BOLD
+# PRIMARY
+# REPLY
+# Arguments:
+#   $1 - prompt string
+# Returns:
+#   0 if yes
+#   1 if no
+#######################################
+confirm() {
+    local prompt="${1:-Are you sure?}"
+    local REPLY
+    while true; do
+        read -n 1 -r -p "${prompt} ${BOLD}[y/n]${PRIMARY}: " REPLY
+        printf "\n"
+        case "$REPLY" in
+            [Yy]) return 0;;
+            [Nn]) return 1;;
+            *) printf "Please enter y or n.\n";;
+        esac
+    done
+}
 
 #######################################
 # Create lock file to prevent concurrent installations
@@ -164,7 +231,7 @@ cleanup() {
 #########################################
 require_non_root() {
     if [[ "$EUID" -eq 0 ]]; then
-        echo "This installer must not be run as root. Please use a regular user account." >&2
+        error "This installer must not be run as root. Please use a regular user account."
         exit 1
     fi
 }
@@ -184,7 +251,7 @@ require_command() {
     local cmd="$1"
     local error_msg="${2:-Error: Required command '$cmd' not found. Please install it and try again.}"
     if ! command -v "$cmd" &> /dev/null; then
-        echo "$error_msg" >&2
+        error "$error_msg"
         exit 1
     fi
 }
@@ -210,7 +277,7 @@ install_dependency() {
             log "$1 is not found. Installing dependency: $cmd"
             run "$install_cmd"
         else
-            echo "Error: Required command '$cmd' not found. Please install it and try again." >&2
+            error "Required command '$cmd' not found. Please install it and try again."
             exit 1
         fi
     fi
@@ -231,7 +298,7 @@ require_zedsdk() {
         ZED_VERSION=$(sudo cat /usr/local/zed/zed-config-version.cmake | grep "set(PACKAGE_VERSION \"" | sed -E 's/set\(PACKAGE_VERSION "(.*)"\)/\1/')
         log "Found ZED SDK version $ZED_VERSION"
     else
-        echo "Error: ZED SDK not found. Please install it and try again." >&2
+        error "ZED SDK not found. Please install it and try again."
         exit 1
     fi
 }
@@ -276,7 +343,7 @@ parse_arguments() {
             -i|--install-deps) INSTALL_DEPS=1 ;;
             --dry-run) DRY_RUN=1 ;;
             -r|--remove) remove_installation; exit 0 ;;
-            *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
+            *) error "Unknown option: $1"; usage; exit 1 ;;
         esac
         shift
     done
@@ -311,7 +378,7 @@ install_docker() {
 
         log "Verifying Docker GPG key..."
         if ! gpg --keyring /usr/share/keyrings/docker-archive-keyring.gpg --list-keys | grep -q "Docker Release"; then
-            echo "Error: Failed to verify Docker GPG key." >&2
+                error "Failed to verify Docker GPG key."
             exit 1
         else
             log "Docker GPG key verified successfully."
@@ -321,8 +388,8 @@ install_docker() {
         run bash -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null'
 
         log "verifying Docker repository..."
-         if ! grep -q "download.docker.com" /etc/apt/sources.list.d/docker.list; then
-            echo "Error: Failed to verify Docker repository." >&2
+        if ! grep -q "download.docker.com" /etc/apt/sources.list.d/docker.list; then
+            error "Failed to verify Docker repository."
             exit 1
         else
             log "Docker repository verified successfully."
@@ -335,7 +402,7 @@ install_docker() {
 
         # Verify Docker installation
         if ! command -v docker &> /dev/null; then
-            echo "Error: Docker installation failed." >&2
+            error "Docker installation failed."
             exit 1
         else
             log "Docker installed successfully."
@@ -356,7 +423,7 @@ install_ros() {
     log "Checking for nvidia jetpack"
     local nvidia_jetpack_installed=$(dpkg -l | grep nvidia-jetpack)
     if [[ -z "$nvidia_jetpack_installed" ]]; then
-        echo "Error: NVIDIA Jetpack not found. Please install NVIDIA Jetpack and try again." >&2
+        error "NVIDIA Jetpack not found. Please install NVIDIA Jetpack and try again."
         exit 1
     fi
     log "NVIDIA Jetpack detected. Proceeding with ROS 2 installation check."
@@ -371,13 +438,13 @@ install_ros() {
     run sudo apt update && sudo apt install -y "ros-$ROS_DISTRO-base"
     
     log "Adding ROS 2 setup to .bashrc..."
-    run echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> ~/.bashrc
+    run 'echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> ~/.bashrc'
     
     # Verify ROS installation
     if [[ -d "/opt/ros/$ROS_DISTRO" ]]; then
         log "ROS 2 $ROS_DISTRO installed successfully."
     else
-        echo "Error: ROS 2 installation failed." >&2
+        error "ROS 2 installation failed."
         exit 1
     fi
 }
@@ -395,16 +462,14 @@ install_ros() {
 #######################################
 install_zedsdk() {
      if [[ "$L4T_VERSION" == "unknown" ]]; then
-        echo "Warning: Unable to detect L4T version." >&2
+        warn "Unable to detect L4T version."
         while true; do
             read -p "Please enter your L4T version (e.g. 36.4): " input
             if [[ "$input" =~ ^[0-9]+\.[0-9]+$ ]]; then
                 L4T_VERSION="$input"
                 break
             else
-                echo "Invalid format. \
-                 Please enter in the format X.X (e.g. 36.4).
-                 or end installation" >&2
+                error "Invalid format. Please enter in the format X.X (e.g. 36.4), or end installation."
             fi
         done
         return
@@ -552,6 +617,8 @@ set_variables() {
         run 'echo "export ROS_DOMAIN_ID=0" >> ~/.loon_env_setup.bash'
         run 'echo "export ROS_LOCALHOST_ONLY=0" >> ~/.loon_env_setup.bash'
         run 'echo "export ZED_SDK_VERSION='$ZED_VERSION'" >> ~/.loon_env_setup.bash'
+        run 'echo "export XAUTHORITY=/home/'$(whoami)'/.Xauthority" >> ~/.loon_env_setup.bash'
+        run 'echo "export L4T_VERSION='$L4T_VERSION'" >> ~/.loon_env_setup.bash'
         # Default wrapper ref: streaming for virtual builds, zedx for hardware builds (LoonE will override per-profile)
         run 'echo "export ZED_WRAPPER_GIT_REF=zedx" >> ~/.loon_env_setup.bash'
         log "[Set Variables] Environment variables set and exported to ~/.loon_env_setup.bash"
@@ -574,17 +641,8 @@ set_variables() {
 }
 
 
-###############################
-# Sets up our workspace and downloads the git repositories for docker use
-# Globals:
-#  WORKSPACE_DIR
-# Arguments:
-#  None
-# Outputs:
-#  Creates the ROS 2 workspace directory structure and source file for environment variables
-###############################
-setup_workspace() {
-    # ZED ROS2 Wrapper dependencies version
+download_dependencies_for_zed_wrapper() {
+     # ZED ROS2 Wrapper dependencies version
     local XACRO_VERSION=2.0.8
     local DIAGNOSTICS_VERSION=4.0.0
     local AMENT_LINT_VERSION=0.12.11
@@ -599,6 +657,36 @@ setup_workspace() {
     local BACKWARD_ROS_VERSION=1.0.7
     local PYPI_URL=https://pypi.jetson-ai-lab.io/jp6/cu126
 
+    run 'find ./src/zed_ws/src -mindepth 1 -maxdepth 1 ! -name "zed_ros_examples" ! -name "zed_ros2_wrapper" ! -name "interfaces" -exec rm -rf {} +'
+    log "[Download] Cleaned existing src directory while preserving zed_ros_examples and zed_ros2_wrapper"
+    log "$BOLD[Download] Downloading a ton of git repostiories for zed wrapper$PRIMARY"
+    log "[Download] Downloading dependencies for ZED ROS2 Wrapper into ./src/zed_ws/src..."
+    run "wget -qO- https://github.com/ros/xacro/archive/refs/tags/${XACRO_VERSION}.tar.gz | tar -xvz && mv xacro-${XACRO_VERSION} ./src/zed_ws/src/xacro"
+    run "wget -qO- https://github.com/ros/diagnostics/archive/refs/tags/${DIAGNOSTICS_VERSION}.tar.gz | tar -xvz && mv diagnostics-${DIAGNOSTICS_VERSION} ./src/zed_ws/src/diagnostics"
+    run "wget -qO- https://github.com/ament/ament_lint/archive/refs/tags/${AMENT_LINT_VERSION}.tar.gz | tar -xvz && mv ament_lint-${AMENT_LINT_VERSION} ./src/zed_ws/src/ament-lint"
+    run "wget -qO- https://github.com/cra-ros-pkg/robot_localization/archive/refs/tags/${ROBOT_LOCALIZATION_VERSION}.tar.gz | tar -xvz && mv robot_localization-${ROBOT_LOCALIZATION_VERSION} ./src/zed_ws/src/robot-localization"
+    #run "wget -qO- https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/${ZED_MSGS_VERSION}.tar.gz | tar -xvz && mv zed-ros2-interfaces-${ZED_MSGS_VERSION} ./src/zed_ws/src/zed-ros2-interfaces"
+    run "wget -qO- https://github.com/ros-drivers/nmea_msgs/archive/refs/tags/${NMEA_MSGS_VERSION}.tar.gz | tar -xvz && mv nmea_msgs-${NMEA_MSGS_VERSION} ./src/zed_ws/src/nmea_msgs"
+    run "wget -qO- https://github.com/ros/angles/archive/refs/tags/${ANGLES_VERSION}.tar.gz | tar -xvz && mv angles-${ANGLES_VERSION} ./src/zed_ws/src/angles"
+    run "wget -qO- https://github.com/ros2/rmw_cyclonedds/archive/refs/tags/${RMW_CYCLONEDDS_VERSION}.tar.gz | tar -xvz && mv rmw_cyclonedds-${RMW_CYCLONEDDS_VERSION} ./src/zed_ws/src/rmw_cyclonedds"
+    run "wget -qO- https://github.com/ros-geographic-info/geographic_info/archive/refs/tags/${GEOGRAPHIC_INFO_VERSION}.tar.gz | tar -xvz && mv geographic_info-${GEOGRAPHIC_INFO_VERSION} ./src/zed_ws/src/geographic-info"
+    run "wget -qO- https://github.com/pal-robotics/backward_ros/archive/refs/tags/${BACKWARD_ROS_VERSION}.tar.gz | tar -xvz && mv backward_ros-${BACKWARD_ROS_VERSION} ./src/zed_ws/src/backward_ros"
+    run "cp -r ./src/zed_ws/src/geographic-info/geographic_msgs/ ./src/zed_ws/src/geographic-msgs/ && rm -rf geographic-info"
+}
+
+
+###############################
+# Sets up our workspace and downloads the git repositories for docker use
+# Globals:
+#  WORKSPACE_DIR
+# Arguments:
+#  None
+# Outputs:
+#  Creates the ROS 2 workspace directory structure and source file for environment variables
+###############################
+setup_workspace() {
+   
+
     local src_dir="$WORKSPACE_DIR"
 
     log "[Setup Workspace] updating git submodules for loon-env installation..."
@@ -606,105 +694,58 @@ setup_workspace() {
 
     log "[Setup Workspace] Creating ROS 2 workspace at $WORKSPACE_DIR..."
     run 'mkdir -p '$src_dir
-    
-    log "[Setup Workspace] Moving ./src/loon_ws to $WORKSPACE_DIR/loon_ws if it exists..."
-    # ensure it is empty too
-    if [[ -d "./src/loon_ws" && ! $(ls -A ./src/loon_ws) ]]; then 
+    run 'mkdir -p '$WORKSPACE_DIR'/zed_ws'
+    run 'mkdir -p '$WORKSPACE_DIR'/loon_ws'
+    run 'mkdir -p '$WORKSPACE_DIR'/docker'
+
+
+
+    log "[Setup Workspace] Moving$BLUE ./src/loon_ws$PRIMARY to $WORKSPACE_DIR/loon_ws if it exists..."
+    # if $WORKSPACE_DIR/loon_ws is empty
+    if [[ ! $(ls -A $WORKSPACE_DIR/loon_ws) ]]; then 
         run cp -r "./src/loon_ws" "$WORKSPACE_DIR/loon_ws"
-        log "[Setup Workspace] Moved loon_ws to workspace directory."
-    elif [[ -d "./src/loon_ws" && $(ls -A ./src/loon_ws) ]]; then
-        echo "[WARNING] Existing loon_ws found in ./src but it is not empty." >&2
-        while true; do
-            read -n 1 -r -p  "Do you want to overwrite the existing loon_ws in the workspace directory with the one in ./src? (y/n) " answer 
-            echo
-            if [[ "$answer" == "y" ]]; then
-                run rm -rf "$WORKSPACE_DIR/loon_ws/"
-                run cp -r "./src/loon_ws" "$WORKSPACE_DIR/loon_ws"
-                log "[Setup Workspace] Moved loon_ws to workspace directory."
-                break
-            elif [[ "$answer" == "n" ]]; then
-                log "[Setup Workspace] Skipping move of loon_ws to workspace directory."
-                break
-            else
-                echo "Invalid input. Please enter 'y' or 'n'." >&2
-            fi
-        done
-    else
-        echo "[WARNING] No existing loon_ws found in ./src. Skipping move." >&2
+        log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
+    else # not empty
+        warn "Existing loon_ws found in workspace directory but it is not empty."
+        if confirm "Do you want to overwrite the existing loon_ws in the workspace directory with the one in ./src?"; then
+            run rm -rf "$WORKSPACE_DIR/loon_ws/"
+            run cp -r "./src/loon_ws" "$WORKSPACE_DIR/loon_ws"
+            log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
+        else
+            log "[Setup Workspace] Skipping move of$BLUE loon_ws$PRIMARY to workspace directory."
+        fi
     fi
 
-    log "[Setup Workspace] Downloading a ton of git repostiories for zed wrapper"
-    # remove existing src except for zed_ros_examples interfaces and zed_ros2_wrapper
-    if [[ -d "./src/zed_ws" ]]; then
-        run 'find ./src/zed_ws/src -mindepth 1 -maxdepth 1 ! -name "zed_ros_examples" ! -name "zed_ros2_wrapper" ! -name "interfaces" -exec rm -rf {} +'
-        log "[Setup Workspace] Cleaned existing src directory while preserving zed_ros_examples and zed_ros2_wrapper"
-    else
-        log "[Setup Workspace] No existing zed_ws found in ./src. Skipping cleanup."
+    # if empty
+    if [[ ! $(ls -A $WORKSPACE_DIR/zed_ws) ]]; then
+        run 'git submodule update --init --recursive'
+        download_dependencies_for_zed_wrapper
+         run cp -r "./src/zed_ws" "$WORKSPACE_DIR/zed_ws"
+    else #not empty
+        warn "Existing$BLUE zed_ws$PRIMARY found in$BLUE $WORKSPACE_DIR/zed_ws $PRIMARY but it is not empty."
+        if confirm "Do you want to overwrite the existing$BLUE zed_ws$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
+            run cp -r "./src/zed_ws" "$WORKSPACE_DIR/zed_ws"
+            download_dependencies_for_zed_wrapper # also cleans the src directory while preserving zed_ros_examples and zed_ros2_wrapper
+            log "[Setup Workspace] Moved zed_ws to workspace directory."
+        else
+            log "[Setup Workspace] Skipping move for ZED ROS2 Wrapper into ./src/zed_ws/src."
+        fi
     fi
 
-    log "[Setup Workspace] Downloading dependencies for ZED ROS2 Wrapper into ./src/zed_ws/src..."
-    if [[ ! $(ls -A ./src/zed_ws) ]]; then
-        run "wget -qO- https://github.com/ros/xacro/archive/refs/tags/${XACRO_VERSION}.tar.gz | tar -xvz && mv xacro-${XACRO_VERSION} ./src/zed_ws/src/xacro"
-        run "wget -qO- https://github.com/ros/diagnostics/archive/refs/tags/${DIAGNOSTICS_VERSION}.tar.gz | tar -xvz && mv diagnostics-${DIAGNOSTICS_VERSION} ./src/zed_ws/src/diagnostics"
-        run "wget -qO- https://github.com/ament/ament_lint/archive/refs/tags/${AMENT_LINT_VERSION}.tar.gz | tar -xvz && mv ament_lint-${AMENT_LINT_VERSION} ./src/zed_ws/src/ament-lint"
-        run "wget -qO- https://github.com/cra-ros-pkg/robot_localization/archive/refs/tags/${ROBOT_LOCALIZATION_VERSION}.tar.gz | tar -xvz && mv robot_localization-${ROBOT_LOCALIZATION_VERSION} ./src/zed_ws/src/robot-localization"
-        run "wget -qO- https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/${ZED_MSGS_VERSION}.tar.gz | tar -xvz && mv zed-ros2-interfaces-${ZED_MSGS_VERSION} ./src/zed_ws/src/zed-ros2-interfaces"
-        run "wget -qO- https://github.com/ros-drivers/nmea_msgs/archive/refs/tags/${NMEA_MSGS_VERSION}.tar.gz | tar -xvz && mv nmea_msgs-${NMEA_MSGS_VERSION} ./src/zed_ws/src/nmea_msgs"
-        run "wget -qO- https://github.com/ros/angles/archive/refs/tags/${ANGLES_VERSION}.tar.gz | tar -xvz && mv angles-${ANGLES_VERSION} ./src/zed_ws/src/angles"
-        run "wget -qO- https://github.com/ros2/rmw_cyclonedds/archive/refs/tags/${RMW_CYCLONEDDS_VERSION}.tar.gz | tar -xvz && mv rmw_cyclonedds-${RMW_CYCLONEDDS_VERSION} ./src/zed_ws/src/rmw_cyclonedds"
-        run "wget -qO- https://github.com/ros-geographic-info/geographic_info/archive/refs/tags/${GEOGRAPHIC_INFO_VERSION}.tar.gz | tar -xvz && mv geographic_info-${GEOGRAPHIC_INFO_VERSION} ./src/zed_ws/src/geographic-info"
-        run "wget -qO- https://github.com/pal-robotics/backward_ros/archive/refs/tags/${BACKWARD_ROS_VERSION}.tar.gz | tar -xvz && mv backward_ros-${BACKWARD_ROS_VERSION} ./src/zed_ws/src/backward_ros"
-        run "cp -r ./src/zed_ws/src/geographic-info/geographic_msgs/ ./src/zed_ws/src/geographic-msgs/ && rm -rf geographic-info"
-    fi
-
-    log "[Setup Workspace] Moving ./src/zed_ws to $WORKSPACE_DIR/zed_ws if it exists..."
-    if [[ -d "./src/zed_ws" && ! $(ls -A ./src/zed_ws) ]]; then
-        run cp -r "./src/zed_ws" "$WORKSPACE_DIR/zed_ws"
-        log "[Setup Workspace] Moved zed_ws to workspace directory."
-    elif [[ -d "./src/zed_ws" && $(ls -A ./src/zed_ws) ]]; then
-        echo "[WARNING] Existing zed_ws found in ./src but it is not empty." >&2
-        while true; do
-            read -n 1 -r -p "Do you want to overwrite the existing zed_ws in the workspace directory with the one in ./src? (y/n) " answer 
-            echo
-            if [[ "$answer" == "y" ]]; then
-                run rm -rf "$WORKSPACE_DIR/zed_ws/"
-                run cp -r "./src/zed_ws" "$WORKSPACE_DIR/zed_ws"
-                log "[Setup Workspace] Moved zed_ws to workspace directory."
-                break
-            elif [[ "$answer" == "n" ]]; then
-                log "[Setup Workspace] Skipping move of zed_ws to workspace directory."
-                break
-            else
-                echo "Invalid input. Please enter 'y' or 'n'." >&2
-            fi
-        done
-    else
-        echo "[WARNING] No existing zed_ws found in ./src. Skipping move." >&2
-    fi
 
     log "[Setup Workspace] Moving ./src/docker to $WORKSPACE_DIR/docker if it exists..."
-    if [[ -d "./src/docker" && ! $(ls -A ./src/docker) ]]; then
+    if [[ ! $(ls -A $WORKSPACE_DIR/docker) ]]; then
         run cp -r "./src/docker" "$WORKSPACE_DIR/docker"
-        log "[Setup Workspace] Moved docker to workspace directory."
-    elif [[ -d "./src/docker" && $(ls -A ./src/docker) ]]; then
-        echo "[WARNING] Existing docker found in ./src but it is not empty." >&2
-        while true; do
-            read -n 1 -r -p "Do you want to overwrite the existing docker in the workspace directory with the one in ./src? (y/n) " answer 
-            echo
-            if [[ "$answer" == "y" ]]; then
-                run rm -rf "$WORKSPACE_DIR/docker/"
-                run cp -r "./src/docker" "$WORKSPACE_DIR/docker"
-                log "[Setup Workspace] Moved docker to workspace directory."
-                break
-            elif [[ "$answer" == "n" ]]; then
-                log "[Setup Workspace] Skipping move of docker to workspace directory."
-                break
-            else
-                echo "Invalid input. Please enter 'y' or 'n'." >&2
-            fi
-        done
-    else
-        echo "[WARNING] No existing docker found in ./src. Skipping move." >&2
+        log "[Setup Workspace] Moved$BLUE docker$PRIMARY to workspace directory."
+    else #not empty
+        warn "Existing$BLUE docker$PRIMARY found in$BLUE $WORKSPACE_DIR/docker $PRIMARY but it is not empty."
+        if confirm "Do you want to overwrite the existing$BLUE docker$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
+            run rm -rf "$WORKSPACE_DIR/docker/"
+            run cp -r "./src/docker" "$WORKSPACE_DIR/docker"
+            log "[Setup Workspace] Moved$BLUE docker$PRIMARY to workspace directory."
+        else
+            log "[Setup Workspace] Skipping move of$BLUE docker$PRIMARY to workspace directory."
+        fi
     fi
 
     log "[Setup Workspace] Subdirectories for loon_e and zedx created in workspace src."
@@ -742,7 +783,7 @@ install_loon_env() {
     log "[Install ENV] Moving copy of Loon-Env script to $LOONE_SCRIPT_INSTALL"
     run 'sudo mkdir -p $(dirname '$LOONE_SCRIPT_INSTALL')'
     if [[ ! -f "$LOONE_SOURCE" ]]; then
-        echo "Error: LoonE source not found at $LOONE_SOURCE" >&2
+        error "LoonE source not found at $LOONE_SOURCE"
         exit 1
     fi
     run 'sudo rm -f '$LOONE_SCRIPT_INSTALL
@@ -762,7 +803,7 @@ install_loon_env() {
     if [[ -f "$LOONE_SCRIPT_INSTALL" ]]; then
         log "[Install ENV] Loon-Env script installed successfully at $LOONE_SCRIPT_INSTALL."
     else
-        echo "Error: Failed to install Loon-Env script." >&2
+        error "Failed to install Loon-Env script."
         exit 1
     fi
 
@@ -770,7 +811,7 @@ install_loon_env() {
     if [[ -d "$PATH_INSTALL/assets" ]]; then
         log "[Install ENV] Loon-Env assets installed successfully at $PATH_INSTALL/assets."
     else
-        echo "Error: Failed to install Loon-Env assets." >&2
+        error "Failed to install Loon-Env assets."
         exit 1
     fi
 }
@@ -812,19 +853,17 @@ install_config_mtu(){
 # Copies the tools directory to the installation directory, sets group ownership and permissions
 #################################
 install_loon_tools() {
-    log "[Install Tools] Installing LoonTools to $PATH_INSTALL/tools"
+    log "[Install Tools] Installing LoonTools to $LOONTOOLS_INSTALL"
 
     # check if tools directory exists and is not empty
-    if [[ -d "$PATH_INSTALL/tools" && $(ls -A $PATH_INSTALL/tools) ]]; then
-        log "[Install Tools] Existing tools directory found at $PATH_INSTALL/tools and it is not empty. Removing existing tools."
-        run 'sudo rm -rf '$PATH_INSTALL/tools/*
+    if [[ -d "$LOONTOOLS_INSTALL" && $(ls -A $LOONTOOLS_INSTALL) ]]; then
+        log "[Install Tools] Existing tools directory found at $LOONTOOLS_INSTALL and it is not empty. Removing existing tools."
+        run 'sudo rm -rf '$LOONTOOLS_INSTALL/*
     fi
-
-    run 'sudo mkdir -p '$PATH_INSTALL/tools
-    run 'sudo cp -r '$THIS_SCRIPT_DIR'/tools/. '$PATH_INSTALL'/tools/'
-    run 'sudo chown -R :'$GROUP_NAME $PATH_INSTALL/tools
-    run 'sudo chmod -R 774 '$PATH_INSTALL/tools
-    log "[Install Tools] LoonTools installed to $PATH_INSTALL/tools with permissions set."
+    run 'sudo cp '$THIS_SCRIPT_DIR'/src/tools/scripts/LoonTools '$LOONTOOLS_INSTALL
+    run 'sudo chown -R :'$GROUP_NAME $LOONTOOLS_INSTALL
+    run 'sudo chmod -R 774 '$LOONTOOLS_INSTALL
+    log "[Install Tools] LoonTools installed to $LOONTOOLS_INSTALL with permissions set."
 }
 
 #################################
@@ -842,7 +881,7 @@ remove_loon_env() {
     run 'sudo rm -rf '$PATH_INSTALL
     run 'sudo rm -f '$LOONE_SCRIPT_INSTALL
     run 'sudo rm -f '$CONFIG_MTU_SCRIPT_INSTALL
-    echo "Loon-Env installation removed successfully. Sorry to see you go! (not actually sorry)"
+    echo "${GREEN}${BOLD}[INFO] ${PRIMARY}Loon-Env installation removed successfully. Sorry to see you go! (not actually sorry)"
 }
 
 # >>> Main Script <<<
@@ -854,7 +893,7 @@ log "Checking for existing installation lock..."
 # Check for existing installation lock
 # Put here to run immediately before any significant operations to save time
 if [[ -f "$LOCKFILE" ]]; then
-    echo "Another installation is already in progress. Please wait for it to finish." >&2
+    error "Another installation is already in progress. PID: $(cat $LOCKFILE). Please wait for it to finish."
     exit 1
 fi
 log "No existing installation lock found. Creating installation lock..."
@@ -870,16 +909,16 @@ log "Proceeding with OS check."
 if [[ -f "/etc/os-release" ]]; then
     . /etc/os-release
     if [[ "$ID" != "ubuntu" || "$VERSION_ID" != "22.04" ]]; then
-        echo "Unsupported operating system. This installer is designed for Ubuntu 22.04." >&2
+        error "Unsupported operating system. This installer is designed for Ubuntu 22.04."
         exit 1
     fi
 else
     # TODO: Add support for other operating systems in the future
-    echo "Unable to detect operating system. This installer is designed for Ubuntu 22.04." >&2
+    warn "Unable to detect operating system. This installer is designed for Ubuntu 22.04."
     read  -p "Do you want to continue anyway? (y/N) " -n 1 -r
     echo
     if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
-        echo "Installation aborted."
+        error "Installation aborted."
         exit 1
     else
         log "Continuing with installation despite unsupported operating system."
@@ -916,7 +955,7 @@ else
     log "Skipping MTU configuration script. You can run it later by running sudo $CONFIG_MTU_SCRIPT_INSTALL or configMTU"
 fi  
 
-echo "Loon-Env installation complete! Please restart your terminal or run 'source ~/.bashrc' to start using Loon-Env."
+echo "${GREEN}${BOLD}[INFO] ${PRIMARY}Loon-Env installation complete! Please restart your terminal or run 'source ~/.bashrc' to start using Loon-Env."
 cat <<EOF
         QUACK!
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⡶⠿⠿⠷⣶⣄⠀⠀⠀⠀⠀

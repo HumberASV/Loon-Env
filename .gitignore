@@ -2,3 +2,16 @@
 test-bin/
 test-cache/
 test-share/
+
+# Ignore build artifacts
+src/zed_ws/src/ament-lint
+src/zed_ws/src/angles
+src/zed_ws/src/backward_ros
+src/zed_ws/src/diagnostics
+src/zed_ws/src/geographic-info
+src/zed_ws/src/geographic-msgs
+src/zed_ws/src/nmea_msgs
+src/zed_ws/src/rmw_cyclonedds
+src/zed_ws/src/robot-localization
+src/zed_ws/src/xacro
+src/zed_ws/src/zed-ros2-interfaces
