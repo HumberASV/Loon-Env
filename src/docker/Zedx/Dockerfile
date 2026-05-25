@@ -56,7 +56,7 @@ RUN set -eux; \
 # -----------------------------
 RUN echo "run" && \
     apt-get update && apt-get install -y \
-    wget curl gnupg2 lsb-release ca-certificates jq git zstd udev \
+    wget curl gnupg2 lsb-release ca-certificates jq git zstd udev sudo \
     libusb-1.0-0 libv4l-0 kmod \
     libqt5xml5 libqt5core5a libqt5gui5 libqt5widgets5 libqt5opengl5 \
     && curl -fsSL https://isaac.download.nvidia.com/isaac-ros/repos.key | gpg --dearmor -o /usr/share/keyrings/nvidia-isaac-ros.gpg \
@@ -85,8 +85,32 @@ RUN L4T_VERSION_SHORT="$(printf '%s' "${L4T_VERSION#R}" | cut -d. -f1,2)" && \
 RUN python3 -m pip install --no-cache-dir "numpy<2"
 
 RUN set -eux; \
+    if grep -qE '(^|[[:space:]])plocate([[:space:]]|$)' /var/lib/dpkg/statoverride; then \
+        sed -i.bak '/[[:space:]]plocate[[:space:]]/d' /var/lib/dpkg/statoverride; \
+    fi
+
+RUN set -eux; \
     if ! id -u robo >/dev/null 2>&1; then \
         useradd --create-home --shell /bin/bash robo; \
+    fi
+
+RUN set -eux; \
+    for package in pyzed cython numpy; do \
+        for path in /usr/local/lib/python3.10/dist-packages/${package}*; do \
+            [ -e "$path" ] || continue; \
+            chown -R robo:robo "$path"; \
+        done; \
+    done
+
+RUN set -eux; \
+    printf 'robo ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/robo; \
+    chmod 0440 /etc/sudoers.d/robo
+
+# Ensure ZED CMake config is discoverable by CMake
+RUN set -eux; \
+    if [ -f /usr/local/zed/zed-config.cmake ]; then \
+        mkdir -p /usr/local/lib/cmake/ZED; \
+        ln -sf /usr/local/zed/zed-config.cmake /usr/local/lib/cmake/ZED/ZEDConfig.cmake; \
     fi
 
 
@@ -164,3 +188,5 @@ RUN echo "source /opt/ros/humble/setup.bash" >> /home/robo/.bashrc && \
     echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /home/robo/.bashrc
 
 WORKDIR /home/robo/ros2_ws
+
+RUN chown -R robo:robo /home/robo/ros2_ws

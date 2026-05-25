@@ -73,7 +73,7 @@ services:
       - /etc/nv_tegra_release:/host-nv_tegra_release:ro
       - ${HOME}/zed_docker_ai/:/usr/local/zed_docker_ai/
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
-      - ${LOONE_WORKSPACE_DIR}/src/zed_ws:/home/robo/zed_ws:ro
+      - ${LOONE_WORKSPACE_DIR}/src/zed_ws:/home/robo/zed_ws
       - ${LOONE_FILES_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro
@@ -112,7 +112,7 @@ services:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /etc/nv_tegra_release:/host-nv_tegra_release:ro
       - ${LOONE_FILES_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
-      - ${LOONE_WORKSPACE_DIR}/src/loone_ws:/home/robo/loone_ws:ro
+      - ${LOONE_WORKSPACE_DIR}/src/loone_ws:/home/robo/loone_ws
       - ${LOONE_FILES_DIR}:/home/robo/files:ro
     deploy:
       resources:

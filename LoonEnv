@@ -782,6 +782,9 @@ install_loon_env() {
 
     log "[Install ENV] Loon-Env assets installed to $PATH_INSTALL/assets with permissions set."
 
+    log "[Install ENV] Setting ownership for $PATH_INSTALL to $USERNAME:$GROUP_NAME"
+    run 'sudo chown -R '$USERNAME':'$GROUP_NAME' '$PATH_INSTALL
+
     log "[Install ENV] Moving copy of Loon-Env script to $LOONE_SCRIPT_INSTALL"
     run 'sudo mkdir -p $(dirname '$LOONE_SCRIPT_INSTALL')'
     if [[ ! -f "$LOONE_SOURCE" ]]; then
@@ -818,6 +821,10 @@ install_loon_env() {
     fi
 }
 
+
+    log "[Setup Workspace] Setting ownership for workspace directories to $USERNAME:$GROUP_NAME"
+    run 'sudo chown -R '$USERNAME':'$GROUP_NAME' '$WORKSPACE_DIR
+    run 'sudo chmod -R 775 '$WORKSPACE_DIR
 #################################
 # Install MTU configuration script to /usr/local/bin and make it executable
 # Globals:
@@ -864,7 +871,7 @@ install_loon_tools() {
     fi
     run 'sudo cp '$THIS_SCRIPT_DIR'/src/tools/scripts/LoonTools '$LOONTOOLS_INSTALL
     run 'sudo chown -R :'$GROUP_NAME $LOONTOOLS_INSTALL
-    run 'sudo chmod -R 774 '$LOONTOOLS_INSTALL
+    run 'sudo chmod -R 755 '$LOONTOOLS_INSTALL
     log "[Install Tools] LoonTools installed to $LOONTOOLS_INSTALL with permissions set."
 }
 
