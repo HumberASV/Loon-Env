@@ -10,6 +10,3 @@
 [submodule "src/loon_ws/src/loon_e"]
 	path = src/loon_ws/src/loon_e
 	url = https://github.com/HumberASV/loon-e.git
-[submodule "src/tools"]
-	path = src/tools
-	url = https://github.com/HumberASV/LoonTools.git
