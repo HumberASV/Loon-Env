@@ -47,6 +47,12 @@ DRY_RUN=0
 LOCKFILE="/tmp/loon-env-install.lock"
 INSTALL_DEPS=0
 
+# Force flags for overring checks and skipping prompts
+FORCE_DOCKER_INSTALL=0
+FORCE_LOONE_INSTALL=0
+FORCE_ZED_INSTALL=0
+SKIP_OTHER_COMPONENTS=0
+
 # Colors for stdout
 PRIMARY=$(tput sgr0)
 RED=$(tput setaf 9)
@@ -86,6 +92,18 @@ Options:
   --dry-run         Show what would be done without making any changes
   --version         Show the version of the installer and exit
   -r, --remove      Remove Loon-Env installation
+  -s, --skip        Skip installation of scripts and MTU configuration
+  -f, --force [COMPONENT] [COMPONENT] [COMPONENT] [OPTION]
+    not all components are required, you can specify one or more components to force install, and optionally skip the other components
+    Force installation of a specific component (docker, loone, zed)
+    components:
+        docker - Force install the docker files in the workspace, overwriting any existing files without prompting
+        loone - Force install the LoonE files in the workspace, overwriting any existing files without prompting
+        zed - Force install the ZED ROS2 Wrapper files in the workspace, overwriting any existing files without prompting
+    option:
+        -s, --skip skips install of the other components, including MTU configuration
+
+
 EOF
 }
 
@@ -342,13 +360,30 @@ parse_arguments() {
             -v|--verbose) VERBOSE=1 ;;
             -i|--install-deps) INSTALL_DEPS=1 ;;
             --dry-run) DRY_RUN=1 ;;
+            -s|--skip) SKIP_OTHER_COMPONENTS=1 ;;
             -r|--remove) remove_installation; exit 0 ;;
+            -f|--force)
+                get_force "$@"
+                break
+                ;;
             *) error "Unknown option: $1"; usage; exit 1 ;;
         esac
         shift
     done
 }
 
+get_force(){
+    while [[ "$#" -gt 1 ]]; do
+        case "$2" in
+            docker) FORCE_DOCKER_INSTALL=1 ;;
+            loone) FORCE_LOONE_INSTALL=1 ;;
+            zed) FORCE_ZED_INSTALL=1 ;;
+            -s|--skip) SKIP_OTHER_COMPONENTS=1 ;;
+            *) break ;;
+        esac
+        shift
+    done
+}
 
 # >>> Installation Functions <<<
 
@@ -665,7 +700,7 @@ download_dependencies_for_zed_wrapper() {
     run "wget -qO- https://github.com/ros/diagnostics/archive/refs/tags/${DIAGNOSTICS_VERSION}.tar.gz | tar -xvz && mv diagnostics-${DIAGNOSTICS_VERSION} ./src/zed_ws/src/diagnostics"
     run "wget -qO- https://github.com/ament/ament_lint/archive/refs/tags/${AMENT_LINT_VERSION}.tar.gz | tar -xvz && mv ament_lint-${AMENT_LINT_VERSION} ./src/zed_ws/src/ament-lint"
     run "wget -qO- https://github.com/cra-ros-pkg/robot_localization/archive/refs/tags/${ROBOT_LOCALIZATION_VERSION}.tar.gz | tar -xvz && mv robot_localization-${ROBOT_LOCALIZATION_VERSION} ./src/zed_ws/src/robot-localization"
-    #run "wget -qO- https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/${ZED_MSGS_VERSION}.tar.gz | tar -xvz && mv zed-ros2-interfaces-${ZED_MSGS_VERSION} ./src/zed_ws/src/zed-ros2-interfaces"
+    run "wget -qO- https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/${ZED_MSGS_VERSION}.tar.gz | tar -xvz && mv zed-ros2-interfaces-${ZED_MSGS_VERSION} ./src/zed_ws/src/zed-ros2-interfaces"
     run "wget -qO- https://github.com/ros-drivers/nmea_msgs/archive/refs/tags/${NMEA_MSGS_VERSION}.tar.gz | tar -xvz && mv nmea_msgs-${NMEA_MSGS_VERSION} ./src/zed_ws/src/nmea_msgs"
     run "wget -qO- https://github.com/ros/angles/archive/refs/tags/${ANGLES_VERSION}.tar.gz | tar -xvz && mv angles-${ANGLES_VERSION} ./src/zed_ws/src/angles"
     run "wget -qO- https://github.com/ros2/rmw_cyclonedds/archive/refs/tags/${RMW_CYCLONEDDS_VERSION}.tar.gz | tar -xvz && mv rmw_cyclonedds-${RMW_CYCLONEDDS_VERSION} ./src/zed_ws/src/rmw_cyclonedds"
@@ -702,53 +737,114 @@ setup_workspace() {
     log $(ls -A $WORKSPACE_DIR/docker)
 
     log "[Setup Workspace] Moving$BLUE ./src/loon_ws$PRIMARY to $WORKSPACE_DIR/loon_ws if it exists..."
-    # if $WORKSPACE_DIR/loon_ws is empty
-    if [[ ! $(ls -A $WORKSPACE_DIR/loon_ws) ]]; then 
-        run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
-        log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
-    else # not empty
-        warn "Existing loon_ws found in workspace directory but it is not empty."
-        if confirm "Do you want to overwrite the existing loon_ws in the workspace directory with the one in ./src?"; then
-            run rm -rf "$WORKSPACE_DIR/loon_ws/"
+
+    loon_ws() {
+
+        # if $WORKSPACE_DIR/loon_ws is empty
+        if [[ ! $(ls -A $WORKSPACE_DIR/loon_ws) ]]; then 
             run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
             log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
-        else
-            log "[Setup Workspace] Skipping move of$BLUE loon_ws$PRIMARY to workspace directory."
-        fi
-    fi
+        else # not empty
+            warn "Existing loon_ws found in workspace directory but it is not empty."
+            if [[ "$FORCE_LOONE_INSTALL" -eq 1 ]]  || \
+                confirm "Do you want to overwrite the existing loon_ws in the workspace directory with the one in $BLUE./src?$PRIMARY (This will delete any existing files in $WORKSPACE_DIR/loon_ws)?"; then
+                
+                if [[ "$FORCE_LOONE_INSTALL" -eq 1 ]]; then
+                    log "Force flag for LoonE installation is set. Overwriting existing loon_ws in workspace directory with the one in ./src..."
+                fi
 
+                run rm -rf "$WORKSPACE_DIR/loon_ws/"
+                run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
+                log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
+            else
+                log "[Setup Workspace] Skipping move of$BLUE loon_ws$PRIMARY to workspace directory."
+            fi
+        fi
+    }
  
-    # if empty
-    if [[ ! $(ls -A $WORKSPACE_DIR/zed_ws) ]]; then
-        run 'git submodule update --init --recursive'
-        download_dependencies_for_zed_wrapper
-         run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
-    else #not empty
-        warn "Existing$BLUE zed_ws$PRIMARY found in$BLUE $WORKSPACE_DIR/zed_ws $PRIMARY but it is not empty."
-        if confirm "Do you want to overwrite the existing$BLUE zed_ws$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
+    zed_ws() {
+        # if empty
+        if [[ ! $(ls -A $WORKSPACE_DIR/zed_ws) ]]; then
+            run 'git submodule update --init --recursive'
+            download_dependencies_for_zed_wrapper
             run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
-            download_dependencies_for_zed_wrapper # also cleans the src directory while preserving zed_ros_examples and zed_ros2_wrapper
-            log "[Setup Workspace] Moved zed_ws to workspace directory."
-        else
-            log "[Setup Workspace] Skipping move for ZED ROS2 Wrapper into ./src/zed_ws/src."
+        else #not empty
+            warn "Existing$BLUE zed_ws$PRIMARY found in$BLUE $WORKSPACE_DIR/zed_ws $PRIMARY but it is not empty."
+            if [[ "$FORCE_ZED_INSTALL" -eq 1 ]] || \
+                confirm "Do you want to overwrite the existing$BLUE zed_ws$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
+                
+                if [[ "$FORCE_ZED_INSTALL" -eq 1 ]]; then
+                    log "Force flag for ZED ROS2 Wrapper installation is set. Overwriting existing zed_ws in workspace directory with the one in ./src..."
+                fi
+                rm -rf "$WORKSPACE_DIR/zed_ws/"
+                run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
+                download_dependencies_for_zed_wrapper # also cleans the src directory while preserving zed_ros_examples and zed_ros2_wrapper
+                log "[Setup Workspace] Moved zed_ws to workspace directory."
+            else
+                log "[Setup Workspace] Skipping move for ZED ROS2 Wrapper into ./src/zed_ws/src."
+            fi
         fi
-    fi
+    }
 
-
-    log "[Setup Workspace] Moving ./src/docker to $WORKSPACE_DIR/docker if it exists..."
-    if [[ ! $(ls -A $WORKSPACE_DIR/docker) ]]; then
-        run cp -r "./src/docker" "$WORKSPACE_DIR"
-        log "[Setup Workspace] Moved$BLUE docker$PRIMARY to workspace directory."
-    else #not empty
-        warn "Existing$BLUE docker$PRIMARY found in$BLUE $WORKSPACE_DIR/docker $PRIMARY but it is not empty."
-        if confirm "Do you want to overwrite the existing$BLUE docker$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
-            run rm -rf "$WORKSPACE_DIR/docker/"
+    docker_ws() {
+        log "[Setup Workspace] Moving ./src/docker to $WORKSPACE_DIR/docker if it exists..."
+        if [[ ! $(ls -A $WORKSPACE_DIR/docker) ]]; then
             run cp -r "./src/docker" "$WORKSPACE_DIR"
             log "[Setup Workspace] Moved$BLUE docker$PRIMARY to workspace directory."
-        else
-            log "[Setup Workspace] Skipping move of$BLUE docker$PRIMARY to workspace directory."
+        else #not empty
+            warn "Existing$BLUE docker$PRIMARY found in$BLUE $WORKSPACE_DIR/docker $PRIMARY but it is not empty."
+            if [[ "$FORCE_DOCKER_INSTALL" -eq 1 ]] || \
+                confirm "Do you want to overwrite the existing$BLUE docker$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
+                if [[ "$FORCE_DOCKER_INSTALL" -eq 1 ]]; then
+                    log "Force flag for Docker installation is set. Overwriting existing docker in workspace directory with the one in ./src..."
+                fi
+                run rm -rf "$WORKSPACE_DIR/docker/"
+                run cp -r "./src/docker" "$WORKSPACE_DIR"
+                log "[Setup Workspace] Moved$BLUE docker$PRIMARY to workspace directory."
+            else
+                log "[Setup Workspace] Skipping move of$BLUE docker$PRIMARY to workspace directory."
+            fi
         fi
+    }
+
+    log "[Setup Workspace] Checking for existing workspace components and handling according to flags and user input..."
+    local installs=("loon_ws"
+        "zed_ws"
+        "docker"
+    )
+
+    if [[ "$SKIP_OTHER_COMPONENTS" -eq 1 ]]; then
+        log "[Setup Workspace] Skip other components flag is set. Only installing components with force flags."
+        installs=()
+        if [[ "$FORCE_LOONE_INSTALL" -eq 1 ]]; then
+            installs+=("loon_ws")
+        fi
+        if [[ "$FORCE_ZED_INSTALL" -eq 1 ]]; then
+            installs+=("zed_ws")
+        fi
+        if [[ "$FORCE_DOCKER_INSTALL" -eq 1 ]]; then
+            installs+=("docker")
+        fi
+
+        log "[Setup Workspace] Components marked for installation: ${installs[*]}"
+        if [[ ${#installs[@]} -eq 0 ]]; then
+            log "[Setup Workspace]$ORANGE No components marked for installation.$PRIMARY Skipping workspace setup."
+            return
+        fi
+
+        for component in "${installs[@]}"; do
+            case $component in
+                "loon_ws") loon_ws ;;
+                "zed_ws") zed_ws ;;
+                "docker") docker_ws ;;
+            esac
+        done
+    else # not skipping, install all components
+        loon_ws
+        zed_ws
+        docker_ws
     fi
+    
 
     log "[Setup Workspace] Subdirectories for loon_e and zedx created in workspace src."
 }
@@ -956,13 +1052,17 @@ install_loon_tools
 setup_workspace
 set_variables
 
-read -p "MTU configuration is required for Loon-Env to function properly. Do you want to run the MTU configuration script now? (Y/n) " -n 1 -r
-echo
-if [[ "$REPLY" =~ ^[Yy]$ ]]; then
-    run 'sudo '$CONFIG_MTU_SCRIPT_INSTALL
+if [[ "$SKIP_OTHER_COMPONENTS" -ne 1 ]]; then
+    read -p "MTU configuration is required for Loon-Env to function properly. Do you want to run the MTU configuration script now? (Y/n) " -n 1 -r
+    echo
+    if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        run 'sudo '$CONFIG_MTU_SCRIPT_INSTALL
+    else
+        log "Skipping MTU configuration script. You can run it later by running sudo $CONFIG_MTU_SCRIPT_INSTALL or configMTU"
+    fi  
 else
-    log "Skipping MTU configuration script. You can run it later by running sudo $CONFIG_MTU_SCRIPT_INSTALL or configMTU"
-fi  
+    log "Skip other components flag is set. Skipping MTU configuration script."
+fi
 
 echo "${GREEN}${BOLD}[INFO] ${PRIMARY}Loon-Env installation complete! Please restart your terminal or run 'source ~/.bashrc' to start using Loon-Env."
 cat <<EOF

@@ -66,6 +66,7 @@ RUN echo "run" && \
     ros-humble-isaac-ros-dnn-image-encoder \
     ros-humble-isaac-ros-tensor-rt \
     ros-humble-ament-cmake-clang-format \
+    ros-humble-zed-msgs \
     time \
     ros-humble-depthimage-to-laserscan \
     ros-humble-zed-description \
@@ -84,16 +85,20 @@ RUN L4T_VERSION_SHORT="$(printf '%s' "${L4T_VERSION#R}" | cut -d. -f1,2)" && \
 
 RUN python3 -m pip install --no-cache-dir "numpy<2"
 
+# dpkg-statoverride can cause issues with plocate which is a dependency of the ZED SDK
+# so we need to remove any overrides for plocate
 RUN set -eux; \
     if grep -qE '(^|[[:space:]])plocate([[:space:]]|$)' /var/lib/dpkg/statoverride; then \
         sed -i.bak '/[[:space:]]plocate[[:space:]]/d' /var/lib/dpkg/statoverride; \
     fi
 
+# Create a non-root user named "robo" if it doesn't already exist, and add to sudoers
 RUN set -eux; \
     if ! id -u robo >/dev/null 2>&1; then \
         useradd --create-home --shell /bin/bash robo; \
     fi
 
+# Ensure the ZED SDK directories are owned by the robo user
 RUN set -eux; \
     for package in pyzed cython numpy; do \
         for path in /usr/local/lib/python3.10/dist-packages/${package}*; do \
@@ -102,11 +107,13 @@ RUN set -eux; \
         done; \
     done
 
+# Ensure the ZED SDK directory is owned by the robo user
 RUN set -eux; \
     printf 'robo ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/robo; \
     chmod 0440 /etc/sudoers.d/robo
 
 # Ensure ZED CMake config is discoverable by CMake
+# but it doesn't work 
 RUN set -eux; \
     if [ -f /usr/local/zed/zed-config.cmake ]; then \
         mkdir -p /usr/local/lib/cmake/ZED; \
@@ -185,7 +192,17 @@ RUN sudo apt install ros-$ROS_DISTRO-rmw-cyclonedds-cpp
 RUN echo "source /opt/ros/humble/setup.bash" >> /home/robo/.bashrc && \
     # echo "test -f /home/robo/ros2_ws/install/setup.bash && source /home/robo/ros2_ws/install/setup.bash" >> /home/robo/.bashrc && \
     echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /home/robo/.bashrc && \
-    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /home/robo/.bashrc
+    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /home/robo/.bashrc && \
+    echo "export ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-0}" >> /home/robo/.bashrc && \
+    echo "export ROS_DISTRO=\${ROS_DISTRO:-humble}" >> /home/robo/.bashrc
+
+# export LT4T version as an environment variable for use in the ROS workspace build
+ENV L4T_VERSION=${L4T_VERSION}
+RUN echo "export L4T_VERSION=${L4T_VERSION}" >> /home/robo/.bashrc
+
+# export ZED_SDK version as an environment variable for use in the ROS workspace build
+ENV ZED_SDK_VERSION=${ZED_SDK_VERSION}
+RUN echo "export ZED_SDK_VERSION=${ZED_SDK_VERSION}" >> /home/robo/.bashrc
 
 WORKDIR /home/robo/ros2_ws
 

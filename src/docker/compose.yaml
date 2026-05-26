@@ -60,6 +60,7 @@ services:
       - HOST_L4T_RELEASE_FILE=/host-nv_tegra_release
       - NVIDIA_DRIVER_CAPABILITIES=all
       - CONTAINER=true
+      - ROS_DISTRO=${ROS_DISTRO:-humble}
     volumes:
       - /dev:/dev
       - /tmp/.X11-unix:/tmp/.X11-unix
@@ -77,6 +78,7 @@ services:
       - ${LOONE_FILES_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro
+
 
   # Loon-E Service
   loone:
