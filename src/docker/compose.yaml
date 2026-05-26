@@ -56,7 +56,7 @@ services:
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
       - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
-      - CYCLONEDDS_URI=file:///root/cyclonedds.xml
+      - CYCLONEDDS_URI=file:///home/robo/cyclonedds.xml
       - HOST_L4T_RELEASE_FILE=/host-nv_tegra_release
       - NVIDIA_DRIVER_CAPABILITIES=all
       - CONTAINER=true
