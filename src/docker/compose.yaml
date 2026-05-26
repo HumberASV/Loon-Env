@@ -49,10 +49,10 @@ services:
     network_mode: host
     environment:
       - QT_X11_NO_MITSHM=1
-      - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}
+      - XDG_RUNTIME_DIR=/tmp/xdg-runtime-robo
       - XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-x11}
       - DISPLAY=${DISPLAY:-:1}
-      - XAUTHORITY=/root/.Xauthority
+      - XAUTHORITY=/home/robo/.Xauthority
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
       - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
@@ -63,7 +63,7 @@ services:
       - ROS_DISTRO=${ROS_DISTRO:-humble}
     volumes:
       - /dev:/dev
-      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /tmp/argus_socket:/tmp/argus_socket
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/
@@ -73,7 +73,7 @@ services:
       - /etc/systemd/system/zed_x_daemon.service:/etc/systemd/system/zed_x_daemon.service:ro
       - /etc/nv_tegra_release:/host-nv_tegra_release:ro
       - ${HOME}/zed_docker_ai/:/usr/local/zed_docker_ai/
-      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+      - ${HOME}/.Xauthority:/home/robo/.Xauthority:ro
       - ${LOONE_WORKSPACE_DIR}/src/zed_ws:/home/robo/zed_ws
       - ${LOONE_FILES_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
       - /etc/passwd:/etc/passwd:ro
@@ -100,12 +100,13 @@ services:
       - DISPLAY=${DISPLAY:-:1}
       - QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen}
       - QT_X11_NO_MITSHM=1
+      - XDG_RUNTIME_DIR=/tmp/xdg-runtime-robo
       - NVIDIA_DRIVER_CAPABILITIES=all
       - XAUTHORITY=/root/.Xauthority
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
       - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
-      - CYCLONEDDS_URI=file:///root/cyclonedds.xml
+      - CYCLONEDDS_URI=file:///home/robo/cyclonedds.xml
       - HOST_L4T_RELEASE_FILE=/host-nv_tegra_release
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix

@@ -343,6 +343,32 @@ migrate_old_installation() {
 }
 
 ##################################
+# Apply host network buffer tuning for large DDS messages
+# Globals:
+#  ASSETS_DIR
+# Arguments:
+#  None
+# Outputs:
+#  Copies the buffer profile into /etc/sysctl.d and loads it
+##################################
+apply_buffers() {
+    local source_file="$ASSETS_DIR/buffers.conf"
+    local target_file="/etc/sysctl.d/60-loon-env-buffers.conf"
+
+    log "[Install Config] Applying host buffer tuning from $source_file"
+
+    if [[ ! -f "$source_file" ]]; then
+        error "Buffer profile not found at $source_file"
+        exit 1
+    fi
+
+    run 'sudo cp '"$source_file"' '"$target_file"
+    run 'sudo sysctl -p '"$target_file"
+
+    log "[Install Config] Host buffer tuning applied from $source_file to $target_file"
+}
+
+##################################
 # Parse command-line arguments
 # Globals:
 #  VERBOSE
@@ -1047,6 +1073,7 @@ require_non_root
 create_group_and_add_user
 installation
 install_loon_env
+apply_buffers
 install_config_mtu
 install_loon_tools
 setup_workspace

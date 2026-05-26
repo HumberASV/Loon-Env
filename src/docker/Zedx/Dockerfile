@@ -35,6 +35,7 @@ ARG L4T_VERSION=36.4
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CMAKE_PREFIX_PATH="/usr/local/zed:$CMAKE_PREFIX_PATH"
 ENV ZED_DIR="/usr/local/zed"
+ENV XDG_RUNTIME_DIR="/tmp/xdg-runtime-robo"
 
 # -----------------------------
 # 0. Jetson APT keyring bootstrap
@@ -85,6 +86,7 @@ RUN L4T_VERSION_SHORT="$(printf '%s' "${L4T_VERSION#R}" | cut -d. -f1,2)" && \
 
 RUN python3 -m pip install --no-cache-dir "numpy<2"
 
+
 # dpkg-statoverride can cause issues with plocate which is a dependency of the ZED SDK
 # so we need to remove any overrides for plocate
 RUN set -eux; \
@@ -97,6 +99,10 @@ RUN set -eux; \
     if ! id -u robo >/dev/null 2>&1; then \
         useradd --create-home --shell /bin/bash robo; \
     fi
+
+RUN set -eux; \
+    mkdir -p "$XDG_RUNTIME_DIR"; \
+    chown robo:robo "$XDG_RUNTIME_DIR"
 
 # Ensure the ZED SDK directories are owned by the robo user
 RUN set -eux; \

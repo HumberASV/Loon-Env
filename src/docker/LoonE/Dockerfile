@@ -33,6 +33,8 @@ ARG LOONE_GIT_REF=main
 ARG ZED_SDK_VERSION=5.2
 ARG L4T_VERSION=36.4
 
+ENV XDG_RUNTIME_DIR="/tmp/xdg-runtime-robo"
+
 # -----------------------------
 # 0. Jetson APT keyring bootstrap
 # -----------------------------
@@ -82,6 +84,10 @@ RUN set -eux; \
     if ! id -u robo >/dev/null 2>&1; then \
         useradd --create-home --shell /bin/bash robo; \
     fi
+
+RUN set -eux; \
+    mkdir -p "$XDG_RUNTIME_DIR"; \
+    chown robo:robo "$XDG_RUNTIME_DIR"
 
 
 # -----------------------------
