@@ -1066,6 +1066,22 @@ log "Current user: $USERNAME"
 log "User home directory: $USER_HOME"
 log "Script directory: $THIS_SCRIPT_DIR"
 
+# Determine if $GROUP_NAME group exists and if the user is part of it, if not, will be created and user will be added to it in create_group_and_add_user function
+if getent group "$GROUP_NAME" > /dev/null; then
+    log "Group $GROUP_NAME already exists."
+    if id -nG "$USERNAME" | grep -qw "$GROUP_NAME"; then
+        log "User $USERNAME is already in group $GROUP_NAME."
+    else
+        log "User $USERNAME is not in group $GROUP_NAME but the group exists. User will be added to the group in the installation process."
+    fi
+else
+    log "Group $GROUP_NAME does not exist and will be created in the installation process."
+    run "sudo groupadd $GROUP_NAME"
+    echo "Group $GROUP_NAME created successfully."
+    echo "User $USERNAME will be added to group $GROUP_NAME in the installation process."
+    run "sudo usermod -aG $GROUP_NAME $USERNAME"
+fi
+
 require_non_root
 
 create_group_and_add_user
