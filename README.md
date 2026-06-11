@@ -27,6 +27,17 @@ To get started with Loon-Env, check you have the dependencies listed below, then
 
 Follow instruction from [NVIDIA's official documentation](https://www.jetson-ai-lab.com/tutorials/initial-setup-jetson-orin-nano/) to set up your Jetson Orin Nano with the appropriate Jetpack version.
 
+#### Remote Work
+
+You can use Tailscale by downloading the installer
+
+```bash
+sudo apt update
+sudo apt install curl -y
+cd /tmp/ # Temporary directory
+curl -fsSL https://tailscale.com | sh
+```
+
 ### Installation
 
 Clone the Loon-Env repository to your local machine:
@@ -50,6 +61,12 @@ Enter the repository directory, give the `LoonEnv` script execute permissions, a
 > ```bash
 >     ./LoonEnv --dry-run
 > ```
+
+You can also force install dependencies with the *install* tag:
+
+```bash
+     ./LoonEnv -i
+```
 
 ## Container Maintenance Model
 

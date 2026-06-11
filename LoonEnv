@@ -68,8 +68,6 @@ ZED_SDK_VERSION="5.2" #Default
 # TODO: Add support for other ROS distros and operating systems in the future
 ROS_DISTRO="humble" # Default
 OPERATING_SYSTEM="ubuntu" # Default
-OPERATING_SYSTEM_VERSION="jammy" # Default
-
 
 # >>> Argument Functions <<<
 
@@ -1039,13 +1037,13 @@ log "Proceeding with OS check."
 # verify that the script is being run on a supported operating system and version
 if [[ -f "/etc/os-release" ]]; then
     . /etc/os-release
-    if [[ "$ID" != "ubuntu" || "$VERSION_ID" != "22.04" ]]; then
-        error "Unsupported operating system. This installer is designed for Ubuntu 22.04."
+    if [[ "$ID" != "ubuntu"]]; then
+        error "Unsupported operating system. This installer is designed for Ubuntu"
         exit 1
     fi
 else
     # TODO: Add support for other operating systems in the future
-    warn "Unable to detect operating system. This installer is designed for Ubuntu 22.04."
+    warn "Unable to detect operating system. This installer is designed for Ubuntu"
     read  -p "Do you want to continue anyway? (y/N) " -n 1 -r
     echo
     if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
