@@ -35,6 +35,7 @@ ARG L4T_VERSION=36.4
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CMAKE_PREFIX_PATH="/usr/local/zed:$CMAKE_PREFIX_PATH"
 ENV ZED_DIR="/usr/local/zed"
+ENV XDG_RUNTIME_DIR="/tmp/xdg-runtime-robo"
 
 # -----------------------------
 # 0. Jetson APT keyring bootstrap
@@ -56,7 +57,7 @@ RUN set -eux; \
 # -----------------------------
 RUN echo "run" && \
     apt-get update && apt-get install -y \
-    wget curl gnupg2 lsb-release ca-certificates jq git zstd udev \
+    wget curl gnupg2 lsb-release ca-certificates jq git zstd udev sudo \
     libusb-1.0-0 libv4l-0 kmod \
     libqt5xml5 libqt5core5a libqt5gui5 libqt5widgets5 libqt5opengl5 \
     && curl -fsSL https://isaac.download.nvidia.com/isaac-ros/repos.key | gpg --dearmor -o /usr/share/keyrings/nvidia-isaac-ros.gpg \
@@ -66,6 +67,7 @@ RUN echo "run" && \
     ros-humble-isaac-ros-dnn-image-encoder \
     ros-humble-isaac-ros-tensor-rt \
     ros-humble-ament-cmake-clang-format \
+    ros-humble-zed-msgs \
     time \
     ros-humble-depthimage-to-laserscan \
     ros-humble-zed-description \
@@ -75,13 +77,54 @@ RUN echo "run" && \
 # -----------------------------
 # 2. ZED SDK Installation
 # -----------------------------
-COPY check-l4t-match.sh /usr/local/bin/check-l4t-match
-RUN chmod +x /usr/local/bin/check-l4t-match
+WORKDIR /tmp
 
-RUN wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION}/jetsons" -O zed_sdk.run && \
+# l4t enviroment variables are in the form RXX.YY.ZZ so we need to extract the major and minor version for the download link
+RUN L4T_VERSION_SHORT="$(printf '%s' "${L4T_VERSION#R}" | cut -d. -f1,2)" && \
+    wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION_SHORT}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 
 RUN python3 -m pip install --no-cache-dir "numpy<2"
+
+
+# dpkg-statoverride can cause issues with plocate which is a dependency of the ZED SDK
+# so we need to remove any overrides for plocate
+RUN set -eux; \
+    if grep -qE '(^|[[:space:]])plocate([[:space:]]|$)' /var/lib/dpkg/statoverride; then \
+        sed -i.bak '/[[:space:]]plocate[[:space:]]/d' /var/lib/dpkg/statoverride; \
+    fi
+
+# Create a non-root user named "robo" if it doesn't already exist, and add to sudoers
+RUN set -eux; \
+    if ! id -u robo >/dev/null 2>&1; then \
+        useradd --create-home --shell /bin/bash robo; \
+    fi
+
+RUN set -eux; \
+    mkdir -p "$XDG_RUNTIME_DIR"; \
+    chown robo:robo "$XDG_RUNTIME_DIR"
+
+# Ensure the ZED SDK directories are owned by the robo user
+RUN set -eux; \
+    for package in pyzed cython numpy; do \
+        for path in /usr/local/lib/python3.10/dist-packages/${package}*; do \
+            [ -e "$path" ] || continue; \
+            chown -R robo:robo "$path"; \
+        done; \
+    done
+
+# Ensure the ZED SDK directory is owned by the robo user
+RUN set -eux; \
+    printf 'robo ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/robo; \
+    chmod 0440 /etc/sudoers.d/robo
+
+# Ensure ZED CMake config is discoverable by CMake
+# but it doesn't work 
+RUN set -eux; \
+    if [ -f /usr/local/zed/zed-config.cmake ]; then \
+        mkdir -p /usr/local/lib/cmake/ZED; \
+        ln -sf /usr/local/zed/zed-config.cmake /usr/local/lib/cmake/ZED/ZEDConfig.cmake; \
+    fi
 
 
 # -----------------------------
@@ -116,22 +159,22 @@ RUN echo "Using zed-ros2-examples ref: ${ZED_EXAMPLES_GIT_REF}" && \
 
 WORKDIR /home/robo/ros2_ws/
 
-
-RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
-  apt-get update && \
-  rosdep update && \
-  rosdep install --from-paths src --ignore-src -r -y && \
-  colcon build --parallel-workers 4 --symlink-install \
-    --event-handlers console_direct+ \
-    --base-paths src \
-    --cmake-clean-cache \
-    --cmake-args \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DZED_SDK_ROOT=/usr/local/zed \
-      -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
-      -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
-      --no-warn-unused-cli && \
-  rm -rf /var/lib/apt/lists/*"
+# TODO: move this to a script because it can cause connection issues for remote work
+# RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
+#   apt-get update && \
+#   rosdep update && \
+#   rosdep install --from-paths src --ignore-src -r -y && \
+#   colcon build --parallel-workers 4 --symlink-install \
+#     --event-handlers console_direct+ \
+#     --base-paths src \
+#     --cmake-clean-cache \
+#     --cmake-args \
+#       -DCMAKE_BUILD_TYPE=Release \
+#       -DZED_SDK_ROOT=/usr/local/zed \
+#       -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
+#       -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
+#       --no-warn-unused-cli && \
+#   rm -rf /var/lib/apt/lists/*"
 
 # -----------------------------
 # 6. NGC Assets & Final Setup
@@ -153,8 +196,20 @@ RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
 RUN sudo apt install ros-$ROS_DISTRO-rmw-cyclonedds-cpp
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /home/robo/.bashrc && \
-    echo "test -f /home/robo/ros2_ws/install/setup.bash && source /home/robo/ros2_ws/install/setup.bash" >> /home/robo/.bashrc && \
+    # echo "test -f /home/robo/ros2_ws/install/setup.bash && source /home/robo/ros2_ws/install/setup.bash" >> /home/robo/.bashrc && \
     echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /home/robo/.bashrc && \
-    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /home/robo/.bashrc
+    echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /home/robo/.bashrc && \
+    echo "export ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-0}" >> /home/robo/.bashrc && \
+    echo "export ROS_DISTRO=\${ROS_DISTRO:-humble}" >> /home/robo/.bashrc
+
+# export LT4T version as an environment variable for use in the ROS workspace build
+ENV L4T_VERSION=${L4T_VERSION}
+RUN echo "export L4T_VERSION=${L4T_VERSION}" >> /home/robo/.bashrc
+
+# export ZED_SDK version as an environment variable for use in the ROS workspace build
+ENV ZED_SDK_VERSION=${ZED_SDK_VERSION}
+RUN echo "export ZED_SDK_VERSION=${ZED_SDK_VERSION}" >> /home/robo/.bashrc
 
 WORKDIR /home/robo/ros2_ws
+
+RUN chown -R robo:robo /home/robo/ros2_ws

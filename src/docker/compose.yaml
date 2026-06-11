@@ -31,7 +31,7 @@ services:
     user: robo
     build:
       context: .
-      dockerfile: ${WORKSPACE_DIR}/docker/Zedx/Dockerfile
+      dockerfile: ${LOONE_WORKSPACE_DIR}/docker/Zedx/Dockerfile
       args:
         - ZED_SDK_VERSION=${ZED_SDK_VERSION:-5.2}
         - L4T_VERSION=${L4T_VERSION:-36.4}
@@ -49,76 +49,74 @@ services:
     network_mode: host
     environment:
       - QT_X11_NO_MITSHM=1
-      - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}
+      - XDG_RUNTIME_DIR=/tmp/xdg-runtime-robo
       - XDG_SESSION_TYPE=${XDG_SESSION_TYPE:-x11}
       - DISPLAY=${DISPLAY:-:1}
-      - XAUTHORITY=/root/.Xauthority
+      - XAUTHORITY=/home/robo/.Xauthority
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
       - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
-      - CYCLONEDDS_URI=file:///root/cyclonedds.xml
+      - CYCLONEDDS_URI=file:///home/robo/cyclonedds.xml
       - HOST_L4T_RELEASE_FILE=/host-nv_tegra_release
       - NVIDIA_DRIVER_CAPABILITIES=all
+      - CONTAINER=true
+      - ROS_DISTRO=${ROS_DISTRO:-humble}
     volumes:
       - /dev:/dev
-      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - /tmp/argus_socket:/tmp/argus_socket
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/
       - /usr/local/zed/resources:/usr/local/zed/resources
+      - /usr/local/bin/LoonTools:/usr/local/bin/LoonTools:ro
       - /usr/local/zed/settings:/usr/local/zed/settings
       - /etc/systemd/system/zed_x_daemon.service:/etc/systemd/system/zed_x_daemon.service:ro
       - /etc/nv_tegra_release:/host-nv_tegra_release:ro
       - ${HOME}/zed_docker_ai/:/usr/local/zed_docker_ai/
-      - ${HOME}/.Xauthority:/root/.Xauthority:ro
-      - ${WORKSPACE_DIR}/src/zed_ws:/home/robo/zed_ws:ro
-      - ${ASSET_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
+      - ${HOME}/.Xauthority:/home/robo/.Xauthority:ro
+      - ${LOONE_WORKSPACE_DIR}/src/zed_ws:/home/robo/zed_ws
+      - ${LOONE_FILES_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
       - /etc/passwd:/etc/passwd:ro
       - /etc/group:/etc/group:ro
-    command: >-
-      /bin/bash -c "
-      /usr/local/bin/check-l4t-match &&
-      source /opt/ros/humble/setup.bash &&
-      source /root/ros2_ws/install/setup.bash &&
-      ros2 launch zed_display_rviz2 display_zed_cam.launch.py"
+
+
   # Loon-E Service
   loone:
     image: ${LOON_E_IMAGE:-loon-e:latest}
     build:
       context: .
-      dockerfile: ${WORKSPACE_DIR}/docker/LoonE/Dockerfile
+      dockerfile: ${LOONE_WORKSPACE_DIR}/docker/LoonE/Dockerfile
       args:
         - ZED_SDK_VERSION=${ZED_SDK_VERSION:-5.2}
         - L4T_VERSION=${L4T_VERSION:-36.4}
         - LOONE_REPO=${LOONE_REPO:-https://github.com/HumberASV/Loon-E.git}
         - LOONE_GIT_REF=${LOONE_GIT_REF:-main}
     runtime: nvidia
-    user: robo
     privileged: true
     network_mode: host
     stdin_open: true
     tty: true
-    depends_on:
-      - zed
     environment:
       - DISPLAY=${DISPLAY:-:1}
       - QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen}
       - QT_X11_NO_MITSHM=1
+      - XDG_RUNTIME_DIR=/tmp/xdg-runtime-robo
       - NVIDIA_DRIVER_CAPABILITIES=all
       - XAUTHORITY=/root/.Xauthority
       - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
       - ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
       - RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
-      - CYCLONEDDS_URI=file:///root/cyclonedds.xml
+      - CYCLONEDDS_URI=file:///home/robo/cyclonedds.xml
       - HOST_L4T_RELEASE_FILE=/host-nv_tegra_release
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - /dev:/dev
       - /tmp:/tmp
-      - /home/robo:/home/robo
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /etc/nv_tegra_release:/host-nv_tegra_release:ro
-      - ${ASSET_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
+      - ${LOONE_FILES_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
+      - ${LOONE_WORKSPACE_DIR}/src/loone_ws:/home/robo/loone_ws
+      - ${LOONE_FILES_DIR}:/home/robo/files:ro
     deploy:
       resources:
         reservations:
@@ -126,7 +124,3 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    command: /bin/bash -c "/usr/local/bin/check-l4t-match &&
-      source /opt/ros/humble/setup.bash &&
-      source /root/Loon-E/install/setup.bash &&
-      ros2 launch loon_e_coms coms_launch.py"
