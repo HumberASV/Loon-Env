@@ -377,6 +377,7 @@ apply_buffers() {
 #  Sets global variables based on the provided arguments
 ##################################
 parse_arguments() {
+
     while [[ "$#" -gt 0 ]]; do
         case "$1" in
             -h|--help) usage; exit 0 ;;
@@ -397,6 +398,7 @@ parse_arguments() {
 }
 
 get_force(){
+
     while [[ "$#" -gt 1 ]]; do
         case "$2" in
             docker) FORCE_DOCKER_INSTALL=1 ;;
@@ -1052,7 +1054,7 @@ log "Proceeding with OS check."
 # verify that the script is being run on a supported operating system and version
 if [[ -f "/etc/os-release" ]]; then
     . /etc/os-release
-    if [[ "$ID" != "ubuntu"]]; then
+    if [[ "$ID" != "ubuntu" ]]; then
         error "Unsupported operating system. This installer is designed for Ubuntu"
         exit 1
     fi
