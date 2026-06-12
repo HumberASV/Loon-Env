@@ -15,3 +15,4 @@ src/zed_ws/src/rmw_cyclonedds
 src/zed_ws/src/robot-localization
 src/zed_ws/src/xacro
 src/zed_ws/src/zed-ros2-interfaces
+src/zed_ws/src/isaac_ros_nitros

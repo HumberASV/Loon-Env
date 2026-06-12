@@ -711,6 +711,7 @@ set_variables() {
         run 'echo "export ZED_SDK_VERSION='$ZED_VERSION'" >> ~/.loon_env_setup.bash'
         run 'echo "export XAUTHORITY=/home/'$(whoami)'/.Xauthority" >> ~/.loon_env_setup.bash'
         run 'echo "export L4T_VERSION='$L4T_VERSION'" >> ~/.loon_env_setup.bash'
+        run 'echo "export CYCLONEDDS_URI=file:///opt/cyclonedds.xml" >> ~/.loon_env_setup.bash'
         # Default wrapper ref: streaming for virtual builds, zedx for hardware builds (LoonE will override per-profile)
         run 'echo "export ZED_WRAPPER_GIT_REF=zedx" >> ~/.loon_env_setup.bash'
         log "[Set Variables] Environment variables set and exported to ~/.loon_env_setup.bash"
@@ -757,13 +758,15 @@ download_dependencies_for_zed_wrapper() {
     run "wget -qO- https://github.com/ros/diagnostics/archive/refs/tags/${DIAGNOSTICS_VERSION}.tar.gz | tar -xvz && mv diagnostics-${DIAGNOSTICS_VERSION} ./src/zed_ws/src/diagnostics"
     run "wget -qO- https://github.com/ament/ament_lint/archive/refs/tags/${AMENT_LINT_VERSION}.tar.gz | tar -xvz && mv ament_lint-${AMENT_LINT_VERSION} ./src/zed_ws/src/ament-lint"
     run "wget -qO- https://github.com/cra-ros-pkg/robot_localization/archive/refs/tags/${ROBOT_LOCALIZATION_VERSION}.tar.gz | tar -xvz && mv robot_localization-${ROBOT_LOCALIZATION_VERSION} ./src/zed_ws/src/robot-localization"
-    run "wget -qO- https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/${ZED_MSGS_VERSION}.tar.gz | tar -xvz && mv zed-ros2-interfaces-${ZED_MSGS_VERSION} ./src/zed_ws/src/zed-ros2-interfaces"
+    #run "wget -qO- https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_nitros/archive/refs/tags/v3.2-13.tar.gz | tar -xvz && mv isaac_ros_nitros-3.2-13 ./src/zed_ws/src/isaac_ros_nitros"
+    #run "wget -qO- https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/${ZED_MSGS_VERSION}.tar.gz | tar -xvz && mv zed-ros2-interfaces-${ZED_MSGS_VERSION} ./src/zed_ws/src/zed-ros2-interfaces"
     run "wget -qO- https://github.com/ros-drivers/nmea_msgs/archive/refs/tags/${NMEA_MSGS_VERSION}.tar.gz | tar -xvz && mv nmea_msgs-${NMEA_MSGS_VERSION} ./src/zed_ws/src/nmea_msgs"
     run "wget -qO- https://github.com/ros/angles/archive/refs/tags/${ANGLES_VERSION}.tar.gz | tar -xvz && mv angles-${ANGLES_VERSION} ./src/zed_ws/src/angles"
     run "wget -qO- https://github.com/ros2/rmw_cyclonedds/archive/refs/tags/${RMW_CYCLONEDDS_VERSION}.tar.gz | tar -xvz && mv rmw_cyclonedds-${RMW_CYCLONEDDS_VERSION} ./src/zed_ws/src/rmw_cyclonedds"
     run "wget -qO- https://github.com/ros-geographic-info/geographic_info/archive/refs/tags/${GEOGRAPHIC_INFO_VERSION}.tar.gz | tar -xvz && mv geographic_info-${GEOGRAPHIC_INFO_VERSION} ./src/zed_ws/src/geographic-info"
     run "wget -qO- https://github.com/pal-robotics/backward_ros/archive/refs/tags/${BACKWARD_ROS_VERSION}.tar.gz | tar -xvz && mv backward_ros-${BACKWARD_ROS_VERSION} ./src/zed_ws/src/backward_ros"
-    run "cp -r ./src/zed_ws/src/geographic-info/geographic_msgs/ ./src/zed_ws/src/geographic-msgs/ && rm -rf geographic-info"
+    run "cp -r ./src/zed_ws/src/geographic-info/geographic_msgs/ ./src/zed_ws/src/geographic-msgs/"
+    run "rm -rf ./src/zed_ws/src/geographic-info"
 }
 
 
@@ -833,9 +836,9 @@ setup_workspace() {
                 if [[ "$FORCE_ZED_INSTALL" -eq 1 ]]; then
                     log "Force flag for ZED ROS2 Wrapper installation is set. Overwriting existing zed_ws in workspace directory with the one in ./src..."
                 fi
+                download_dependencies_for_zed_wrapper # also cleans the src directory while preserving zed_ros_examples and zed_ros2_wrapper
                 rm -rf "$WORKSPACE_DIR/zed_ws/"
                 run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
-                download_dependencies_for_zed_wrapper # also cleans the src directory while preserving zed_ros_examples and zed_ros2_wrapper
                 log "[Setup Workspace] Moved zed_ws to workspace directory."
             else
                 log "[Setup Workspace] Skipping move for ZED ROS2 Wrapper into ./src/zed_ws/src."
@@ -1127,6 +1130,11 @@ install_config_mtu
 install_loon_tools
 setup_workspace
 set_variables
+
+log "Copying cyclonedds config to /opt/cyclonedds.xml and setting permissions for non-root users to read and write"
+run "sudo cp ./src/assets/cyclonedds.xml /opt/cyclonedds.xml"
+run "sudo chmod 666 /opt/cyclonedds.xml"
+run "sudo chown :$GROUP_NAME /opt/cyclonedds.xml"
 
 log "Ensure /opt/ros/humble/setup.bash path has correct permissions for sourcing by non-root users"
 run "sudo chmod -R 755 /opt/ros/$ROS_DISTRO"
