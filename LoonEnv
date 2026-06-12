@@ -280,6 +280,7 @@ require_command() {
 #  INSTALL_DEPS
 # Arguments:
 #  cmd - The command to check for
+#  msg - message
 #  install_cmd - The command to install the dependency if it's not found
 # Outputs:
 #  Installs the dependency if it's not found, otherwise does nothing
@@ -287,13 +288,14 @@ require_command() {
 install_dependency() {
     log "Checking for dependency: $1"
     local cmd="$1"
-    local install_cmd="$2"
+    local msg="$2"
+    local install_cmd="$3"
     if ! command -v "$cmd" &> /dev/null; then
         if [[ "$INSTALL_DEPS" -eq 1 ]]; then
             log "$1 is not found. Installing dependency: $cmd"
             run "$install_cmd"
         else
-            error "Required command '$cmd' not found. Please install it and try again."
+            error $msg || "Required command '$cmd' not found. Please install it and try again."
             exit 1
         fi
     fi
@@ -493,10 +495,33 @@ install_ros() {
         log "ROS 2 $ROS_DISTRO is already installed. Skipping ROS installation."
         return
     fi
+
+    log "Checking for source"
+    if dpkg -s ros2-apt-source >/dev/null 2>&1; then
+        log "ros2-apt-source installed. proceed without repo setup"
+    else
+        echo "ros2-apt-source not installed. Installing..."
+        run sudo apt install software-properties-common
+        run sudo add-apt-repository universe
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            echo "${YELLOW}${BOLD}[DRY RUN] ${PRIMARY} lines under https://docs.ros.org/en/humble/Installation/Alternatives/Ubuntu-Development-Setup.html"
+        else
+            export ROS_APT_SOURCE_VERSION=$(
+                curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest |
+                grep -F "tag_name" |
+                awk -F'"' '{print $4}'
+            )
+            curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb"
+            sudo dpkg -i /tmp/ros2-apt-source.deb
+            sudo apt update
+            sudo apt upgrade
+        fi
+     
+    fi
     log "ROS 2 $ROS_DISTRO not found. Proceeding with installation."
 
     log "Installing ROS 2 $ROS_DISTRO..."
-    run sudo apt update && sudo apt install -y "ros-$ROS_DISTRO-base"
+    run sudo apt update && sudo apt install -y "ros-$ROS_DISTRO-desktop"
     
     log "Adding ROS 2 setup to .bashrc..."
     run 'echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> ~/.bashrc'
@@ -522,6 +547,7 @@ install_ros() {
 #  Installs ZED SDK if it's not already installed, otherwise does nothing
 #######################################
 install_zedsdk() {
+
      if [[ "$L4T_VERSION" == "unknown" ]]; then
         warn "Unable to detect L4T version."
         while true; do
@@ -536,7 +562,10 @@ install_zedsdk() {
         return
     fi
     log "Installing ZED SDK..."
-    run wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_VERSION}/jetsons" -O zed_sdk.run && \
+    if [[ $L4T_VERSION =~ ^R([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
+        local SHORT_L4T="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+    fi
+    run wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${SHORT_L4T}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 }
 
@@ -631,6 +660,7 @@ installation() {
 
         install_docker
         install_ros
+        
         install_zedsdk
     fi
 
@@ -647,6 +677,7 @@ installation() {
     # Check for NVIDIA GPU and drivers
     require_command "nvidia-smi" \
         "NVIDIA GPU not detected. Ensure you are using Jetpack on a compatible NVIDIA Jetson device with proper drivers installed."
+
 
     log "[Installation] Checking zed sdk installation..."
     require_zedsdk
@@ -891,38 +922,39 @@ setup_workspace() {
 install_loon_env() {
     migrate_old_installation
     log "[Install ENV] Installing Loon-Env assets of $VERSION to $PATH_INSTALL"
-    run 'sudo mkdir -p ' $PATH_INSTALL/assets
+    run "sudo mkdir -p  $PATH_INSTALL/assets"
+    run "sudo mkdir -p $WORKSPACE_DIR"
 
     log "[Install ENV] Copying assets or overwriting to $PATH_INSTALL/assets"
-    run rm -rf $PATH_INSTALL/assets/*
-    run 'sudo cp -r '$ASSETS_DIR'/.' $PATH_INSTALL/assets'/'
+    run "rm -rf $PATH_INSTALL/assets/*"
+    run "sudo cp -r $ASSETS_DIR/. $PATH_INSTALL/assets/"
 
     # asset permissions to group and read/write for owner and group, read for others
     log "[Install ENV] Setting permissions for $PATH_INSTALL/assets to group ownership of $GROUP_NAME and read write for owner and group, read for others"
-    run 'sudo chown -R :'$GROUP_NAME $PATH_INSTALL/assets
-    run 'sudo chmod -R 774 ' $PATH_INSTALL/assets
+    run "sudo chown -R :$GROUP_NAME $PATH_INSTALL/assets"
+    run "sudo chmod -R 774 $PATH_INSTALL/assets"
 
     log "[Install ENV] Loon-Env assets installed to $PATH_INSTALL/assets with permissions set."
 
     log "[Install ENV] Setting ownership for $PATH_INSTALL to $USERNAME:$GROUP_NAME"
-    run 'sudo chown -R '$USERNAME':'$GROUP_NAME' '$PATH_INSTALL
+    run "sudo chown -R $USERNAME:$GROUP_NAME $PATH_INSTALL"
 
     log "[Install ENV] Moving copy of Loon-Env script to $LOONE_SCRIPT_INSTALL"
-    run 'sudo mkdir -p $(dirname '$LOONE_SCRIPT_INSTALL')'
+    run "sudo mkdir -p $(dirname $LOONE_SCRIPT_INSTALL)"
     if [[ ! -f "$LOONE_SOURCE" ]]; then
         error "LoonE source not found at $LOONE_SOURCE"
         exit 1
     fi
-    run 'sudo rm -f '$LOONE_SCRIPT_INSTALL
-    run sudo cp "$LOONE_SOURCE" "$LOONE_SCRIPT_INSTALL"
+    run "sudo rm -f $LOONE_SCRIPT_INSTALL"
+    run "sudo cp $LOONE_SOURCE $LOONE_SCRIPT_INSTALL"
     
     log "[Install ENV] Loon-Env script copied to $LOONE_SCRIPT_INSTALL"
 
     # Set group ownership and permissions for the script
-    run sudo chown :"$GROUP_NAME" "$LOONE_SCRIPT_INSTALL"
+    run "sudo chown :$GROUP_NAME $LOONE_SCRIPT_INSTALL"
 
     # Make the script executable
-    run sudo chmod 755 "$LOONE_SCRIPT_INSTALL"
+    run "sudo chmod 755 $LOONE_SCRIPT_INSTALL"
     
     log "[Install ENV] Permissions set for $LOONE_SCRIPT_INSTALL: group ownership to $GROUP_NAME and executable by all users."
 
@@ -943,8 +975,8 @@ install_loon_env() {
     fi
 
     log "[Setup Workspace] Setting ownership for workspace directories to $USERNAME:$GROUP_NAME"
-    run 'sudo chown -R '$USERNAME':'$GROUP_NAME' '$WORKSPACE_DIR
-    run 'sudo chmod -R 775 '$WORKSPACE_DIR
+    run "sudo chown -R $USERNAME:$GROUP_NAME $WORKSPACE_DIR"
+    run "sudo chmod -R 775 $WORKSPACE_DIR"
 }
 #################################
 # Install MTU configuration script to /usr/local/bin and make it executable
