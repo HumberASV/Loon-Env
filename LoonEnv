@@ -1128,6 +1128,10 @@ install_loon_tools
 setup_workspace
 set_variables
 
+log "Ensure /opt/ros/humble/setup.bash path has correct permissions for sourcing by non-root users"
+run "sudo chmod -R 755 /opt/ros/$ROS_DISTRO"
+run "sudo chown -R :$GROUP_NAME /opt/ros/$ROS_DISTRO"
+
 if [[ "$SKIP_OTHER_COMPONENTS" -ne 1 ]]; then
     read -p "MTU configuration is required for Loon-Env to function properly. Do you want to run the MTU configuration script now? (Y/n) " -n 1 -r
     echo
