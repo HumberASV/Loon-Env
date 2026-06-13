@@ -28,8 +28,9 @@ IFS=$'\n\t' # Handle spaces in filenames
 
 # Installer information
 APP_NAME="Loon-Env"
-VERSION="4.0.1" # Change this on each release
+VERSION="4.0.2" # Change this on each release
 # Fix: Update to latest main
+# Fix: 
 PATH_INSTALL="/opt/loon-env"
 LOONTOOLS_INSTALL="/usr/local/bin/LoonTools"
 LOONE_SCRIPT_INSTALL="/usr/local/bin/LoonE"
