@@ -28,7 +28,8 @@ IFS=$'\n\t' # Handle spaces in filenames
 
 # Installer information
 APP_NAME="Loon-Env"
-VERSION="4.0.0" # Change this on each release
+VERSION="4.0.1" # Change this on each release
+# Fix: Update to latest main
 PATH_INSTALL="/opt/loon-env"
 LOONTOOLS_INSTALL="/usr/local/bin/LoonTools"
 LOONE_SCRIPT_INSTALL="/usr/local/bin/LoonE"
@@ -1049,6 +1050,54 @@ remove_loon_env() {
     echo "${GREEN}${BOLD}[INFO] ${PRIMARY}Loon-Env installation removed successfully. Sorry to see you go! (not actually sorry)"
 }
 
+
+#################################
+# update repositories
+# Globals:
+# None
+# Arguements:
+# None:
+# Outputs:
+# New repository if user selects or force flag is set, otherwise does nothing
+#################################
+update_git() {
+    log "[Git Updater] Checking src directory"
+    check_repo "./src/loon_ws/src/loon_e" "LoonE" "$FORCE_LOONE_INSTALL"
+}
+
+#################################
+# Checks a repo for updates and asks
+# Globals:
+# None
+# Arguements:
+# $1 - Repository location
+# $2 - Repository name for logging purposes
+# $3 - Force update flag, if set to 1, will pull updates without confirmation
+#################################
+check_repo(){
+    local repoLocation="$1"
+    local name="$2"
+    local forceFlag="$3" || 0;
+    log "[Git Check] For updates at $name repository at $repoLocation"
+    local git=$(cd $repoLocation && git fetch --dry-run -v)
+    if [[ -n "$git" ]]; then
+        log "[Git Check] Updates found for $name repository. Pulling latest changes..."
+        if [[ "$forceFlag" -eq 1 ]]; then
+            log "[Git Check] Force flag is set for $name repository. Pulling latest changes without confirmation..."
+            run "(cd $repoLocation && git pull)"
+        else
+            if confirm "Updates found for $name repository. Do you want to pull the latest changes?"; then
+                run "(cd $repoLocation && git pull)"
+                echo "[Git Check] $name repository updated successfully."
+            else
+                log "[Git Check] Skipping update for $name repository."
+            fi
+        fi
+    else
+        log "[Git Check] No updates found for $name repository."
+    fi
+}
+
 # >>> Main Script <<<
 
 parse_arguments "$@"
@@ -1128,6 +1177,7 @@ install_loon_env
 apply_buffers
 install_config_mtu
 install_loon_tools
+update_git
 setup_workspace
 set_variables
 
