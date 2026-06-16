@@ -390,7 +390,7 @@ parse_arguments() {
             -i|--install-deps) INSTALL_DEPS=1 ;;
             --dry-run) DRY_RUN=1 ;;
             -s|--skip) SKIP_OTHER_COMPONENTS=1 ;;
-            -r|--remove) remove_installation; exit 0 ;;
+            -r|--remove) remove_loon_env; exit 0 ;;
             -f|--force)
                 get_force "$@"
                 break

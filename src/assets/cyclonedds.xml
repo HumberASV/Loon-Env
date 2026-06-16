@@ -5,20 +5,23 @@
       <Interfaces>
         <NetworkInterface autodetermine="true" priority="default" multicast="false" />
       </Interfaces>
-      <AllowMulticast>false</AllowMulticast><!-- Disable multicast to avoid issues with Tailscale streaming -->
+      <AllowMulticast>false</AllowMulticast><!-- Multicast disabled: incompatible with Tailscale -->
       <MaxMessageSize>65500B</MaxMessageSize>
     </General>
     <Internal>
       <Watermarks>
         <WhcHigh>500kB</WhcHigh>
       </Watermarks>
+      <SocketReceiveBufferSize min="10MB"/>
     </Internal>
     <Discovery>
       <ParticipantIndex>auto</ParticipantIndex>
       <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
       <Peers>
-        <Peer address="127.0.0.1"/>
-    </Peers>
+        <!-- Multicast is disabled (Tailscale incompatible). Add each machine's    -->
+        <!-- Tailscale IP here for multi-machine ROS 2 discovery, e.g.:            -->
+        <!--   <Peer address="100.x.x.x"/>  (run `tailscale ip` to get the IP)     -->
+      </Peers>
     </Discovery>
 
   </Domain>
