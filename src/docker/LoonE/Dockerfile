@@ -80,6 +80,11 @@ RUN wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${L4T_
 
 RUN python3 -m pip install --no-cache-dir numpy
 
+RUN python3 -m pip install --no-cache-dir \
+    adafruit-blinka \
+    adafruit-circuitpython-motor \
+    adafruit-circuitpython-pca9685
+
 RUN set -eux; \
     if ! id -u robo >/dev/null 2>&1; then \
         useradd --create-home --shell /bin/bash robo; \

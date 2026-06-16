@@ -18,9 +18,9 @@
       <ParticipantIndex>auto</ParticipantIndex>
       <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
       <Peers>
-        <!-- Multicast is disabled (Tailscale incompatible). Add each machine's    -->
-        <!-- Tailscale IP here for multi-machine ROS 2 discovery, e.g.:            -->
-        <!--   <Peer address="100.x.x.x"/>  (run `tailscale ip` to get the IP)     -->
+        <Peer address="127.0.0.1"/><!-- required: intra-host DDS discovery between Docker containers -->
+        <!-- For multi-machine discovery over Tailscale (multicast disabled), add each remote machine's IP: -->
+        <!-- <Peer address="100.x.x.x"/>  (run `tailscale ip` on each machine to get the IP)               -->
       </Peers>
     </Discovery>
 
