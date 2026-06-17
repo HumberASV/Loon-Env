@@ -33,3 +33,19 @@ LOONE_WORKSPACE_DIR | Directory for the ROS 2 workspaces (default: $HOME/LoonE_w
 LOONE_SETUP_SCRIPT | Path to the setup script for sourcing the workspace (default: $HOME/.loon_env_setup.bash)
 
 
+# Loon-Env v5
+
+Loon-Env v5 is the latest version of the Loon-Env script, which includes several improvements and new features compared to previous versions. Some of the key changes in v5 include:
+
+* set up new loon_hub script which contains universal functions for managing LoonE and ZEDX environments
+* set up Isaac Sim environment variables
+* set up IsaacBridge script and assets
+* set up BaseStation script and assets
+* Improved LoonTools for base station and sim bridge management
+
+
+## Setting Up Isaac Sim
+
+## Setting UP Isaac Bridge script
+
+## Setting Up Base Station script

@@ -28,48 +28,79 @@ IFS=$'\n\t' # Handle spaces in filenames
 
 # Installer information
 APP_NAME="Loon-Env"
-VERSION="4.0.2" # Change this on each release
-# Fix: Update to latest main
-# Fix: 
-PATH_INSTALL="/opt/loon-env"
-LOONTOOLS_INSTALL="/usr/local/bin/LoonTools"
-LOONE_SCRIPT_INSTALL="/usr/local/bin/LoonE"
-CONFIG_MTU_SCRIPT_INSTALL="/usr/local/bin/configMTU"
-SCRIPTS_SOURCE="./src/tools/scripts"
-LOONE_SOURCE=$SCRIPTS_SOURCE/LoonE
-ASSETS_DIR="./src/assets"
-WORKSPACE_DIR="/home/$(whoami)/LoonE_ws"
-GROUP_NAME="loon-env-users"
 
+WORKSPACE_DIR="/home/$(whoami)/LoonE_ws"
+
+source "$(dirname "${BASH_SOURCE[0]}")/src/tools/scripts/dependency/loon_hub"
 
 
 # Installer constants
-VERBOSE=0
-DRY_RUN=0
 LOCKFILE="/tmp/loon-env-install.lock"
 INSTALL_DEPS=0
 
 # Force flags for overring checks and skipping prompts
-FORCE_DOCKER_INSTALL=0
-FORCE_LOONE_INSTALL=0
-FORCE_ZED_INSTALL=0
+FORCE=0
+
+# Options for --force to specify which components to force install (docker, loone, zed, all)
+FORCE_OPTIONS=(
+    "docker"
+    "loone"
+    "zed"
+    "all"
+)
+
+# Arrays to hold which components to force install
+FORCE_SELECTED=()
+
+# Flag to skip install non-forced components, 
+# used in conjunction with --force when user only wants to install specific components without prompts
 SKIP_OTHER_COMPONENTS=0
 
-# Colors for stdout
-PRIMARY=$(tput sgr0)
-RED=$(tput setaf 9)
-GREEN=$(tput setaf 2)
-YELLOW=$(tput setaf 3)
-ORANGE=$(tput setaf 202)
-BLUE=$(tput setaf 4)
-BOLD=$(tput bold)
+# Flag to skip install of scripts and MTU configuration
+# used when user only wants to install ROS packages for example
+SKIP_SCRIPTS_AND_MTU=0
 
 # Variables to hold detected versions
 ZED_SDK_VERSION="5.2" #Default
 
-# TODO: Add support for other ROS distros and operating systems in the future
 ROS_DISTRO="humble" # Default
 OPERATING_SYSTEM="ubuntu" # Default
+
+# >>> Install Dependency Utility 
+# This section contains utility functions for checking and installing
+# dependencies, as well as checking for required commands and versions.
+REQUIRE_ROS=0
+REQUIRE_DOCKER=0
+REQUIRE_ZED_SDK=0
+REQUIRE_PIP=0
+REQUIRE_CUDA=0
+REQUIRE_PNPM=0
+REQUIRE_ZED_DRIVER=0
+
+INSTALLATION_OPTIONS=(
+    "basestation"
+    "orin"
+    "website"
+    "all"
+)
+
+# Systems user selected
+SELECTED_SYSTEMS=()
+
+# APT packages required per component (checked before installation)
+DOCKER_APT_DEPENDENCIES=(
+    "docker-ce"
+    "docker-ce-cli"
+    "containerd.io"
+    "docker-buildx-plugin"
+    "docker-compose-plugin"
+)
+
+ROS_APT_DEPENDENCIES=(
+    "ros-$ROS_DISTRO-desktop"
+    "python3-rosdep"
+    "python3-colcon-common-extensions"
+)
 
 # >>> Argument Functions <<<
 
@@ -84,148 +115,42 @@ OPERATING_SYSTEM="ubuntu" # Default
 ###############################
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [OPTIONS]
+Usage: $(basename "$0") [OPTIONS] [SYSTEM]
+
+Choices for SYSTEM:
+  choices: ${INSTALLATION_OPTIONS[*]}
+
 Options:
-  -h, --help        Show this help message and exit
-  -v, --verbose     Enable verbose output
-  -i, --install-deps  Install required dependencies
-  --dry-run         Show what would be done without making any changes
-  --version         Show the version of the installer and exit
-  -r, --remove      Remove Loon-Env installation
-  -s, --skip        Skip installation of scripts and MTU configuration
-  -f, --force [COMPONENT] [COMPONENT] [COMPONENT] [OPTION]
-    not all components are required, you can specify one or more components to force install, and optionally skip the other components
-    Force installation of a specific component (docker, loone, zed)
-    components:
-        docker - Force install the docker files in the workspace, overwriting any existing files without prompting
-        loone - Force install the LoonE files in the workspace, overwriting any existing files without prompting
-        zed - Force install the ZED ROS2 Wrapper files in the workspace, overwriting any existing files without prompting
-    option:
-        -s, --skip skips install of the other components, including MTU configuration
-
-
+  -d, --dry-run        Show what would be done without making changes
+  -f, --force [COMP]   Force install everything, or restrict to specific components
+                         Choices: ${FORCE_OPTIONS[*]}
+                         Accepts multiple components (e.g., -f docker -f zed)
+  -h, --help           Show this help message and exit
+  -r, --remove         Remove Loon-Env installation
+  -s, --skip           Skip installation of scripts and MTU configuration
+      --skip-others    When forcing specific components, skips all unmentioned ones
+  -v, --verbose        Enable verbose output
+      --version        Show the version of the installer and exit
 EOF
 }
 
 ###############################
 # Display version information
 # Globals:
-#  VERSION
+#  LOON_ENV_VERSION
 # Arguments:
 #  None
 # Outputs:
 #  Prints version information to stdout
 ###############################
 version() {
-    echo "$APP_NAME Installer version $VERSION"
-}
-
-#################################
-# Logs a message if verbose mode is enabled
-# Globals:
-#  VERBOSE
-# Arguments:
-#  msg - The message to log
-# Outputs:
-#  Prints the message to stdout if verbose mode is enabled
-#################################
-log() {
-    if [[ "$VERBOSE" -eq 1 ]]; then
-        echo "${GREEN}${BOLD}[INFO] ${PRIMARY}$*"
-    fi
-}
-
-#################################
-# Prints an error message to stderr
-# Globals:
-#  RED
-#  BOLD
-#  PRIMARY
-# Arguments:
-#  msg - The message to log
-# Outputs:
-#  Prints the message to stderr
-#################################
-error() {
-    echo "${RED}${BOLD}[ERROR] ${PRIMARY}$*" >&2
-}
-
-#################################
-# Prints a warning message to stderr
-# Globals:
-#  ORANGE
-#  BOLD
-#  PRIMARY
-# Arguments:
-#  msg - The message to log
-# Outputs:
-#  Prints the message to stderr
-#################################
-warn() {
-    echo "${ORANGE}${BOLD}[WARN] ${PRIMARY}$*" >&2
-}
-
-#################################
-# Executes a command, respecting dry-run mode
-# Globals:
-#  DRY_RUN
-# Arguments:
-#  cmd - The command to execute as a string or array
-# Outputs:
-#  Executes the command if not in dry-run mode, otherwise prints it
-run() {
-    if [[ "$DRY_RUN" -eq 1 ]]; then
-        echo "${YELLOW}${BOLD}[DRY RUN] ${PRIMARY}$*"
-    else
-        eval "$@"
-    fi
+    echo "$APP_NAME Installer version $LOON_ENV_VERSION"
 }
 
 # >>> Utility Functions <<<
 
-
-#######################################
-# Asks on stdout using read for confirmation
-# Globals:
-# BOLD
-# PRIMARY
-# REPLY
-# Arguments:
-#   $1 - prompt string
-# Returns:
-#   0 if yes
-#   1 if no
-#######################################
-confirm() {
-    local prompt="${1:-Are you sure?}"
-    local REPLY
-    while true; do
-        read -n 1 -r -p "${prompt} ${BOLD}[y/n]${PRIMARY}: " REPLY
-        printf "\n"
-        case "$REPLY" in
-            [Yy]) return 0;;
-            [Nn]) return 1;;
-            *) printf "Please enter y or n.\n";;
-        esac
-    done
-}
-
-#######################################
-# Create lock file to prevent concurrent installations
-# Globals:
-#  LOCKFILE
-# Arguments:
-#  None
-# Outputs:
-#  Writes the current process ID to the lock file
-#######################################
-create_lock() {
-    log "Creating installation lock at $LOCKFILE..."
-    run 'echo "$$" > "$LOCKFILE"'    
-}
-
 #########################################
-# Remove lock file on exit
+# Remove lock file on exit overwrites the cleanup on loon_hub
 # Globals:
 #  LOCKFILE
 # Arguments:
@@ -236,112 +161,6 @@ create_lock() {
 cleanup() {
     log "Cleaning up installation lock..."
     run rm -f "$LOCKFILE"
-}
-
-#########################################
-# Check if the script is run as root
-# Globals:
-#  EUID
-# Arguments:
-#  None
-# Outputs:
-#  Exits with an error message if run as root
-#########################################
-require_non_root() {
-    if [[ "$EUID" -eq 0 ]]; then
-        error "This installer must not be run as root. Please use a regular user account."
-        exit 1
-    fi
-}
-
-#######################################
-# Check if a required command is available
-# Globals:
-#  INSTALL_DEPS
-# Arguments:
-#  cmd - The command to check for
-#  error_msg - Optional custom error message to display if the command is not found
-# Outputs:
-#  Exits with an error message if the command is not found
-#######################################
-require_command() {
-    log "Checking for required command: $1"
-    local cmd="$1"
-    local error_msg="${2:-Error: Required command '$cmd' not found. Please install it and try again.}"
-    if ! command -v "$cmd" &> /dev/null; then
-        error "$error_msg"
-        exit 1
-    fi
-}
-
-
-########################################
-# Unlike require_command, 
-# this function will attempt to install the dependency if it's not found
-# Globals:
-#  INSTALL_DEPS
-# Arguments:
-#  cmd - The command to check for
-#  msg - message
-#  install_cmd - The command to install the dependency if it's not found
-# Outputs:
-#  Installs the dependency if it's not found, otherwise does nothing
-########################################
-install_dependency() {
-    log "Checking for dependency: $1"
-    local cmd="$1"
-    local msg="$2"
-    local install_cmd="$3"
-    if ! command -v "$cmd" &> /dev/null; then
-        if [[ "$INSTALL_DEPS" -eq 1 ]]; then
-            log "$1 is not found. Installing dependency: $cmd"
-            run "$install_cmd"
-        else
-            error $msg || "Required command '$cmd' not found. Please install it and try again."
-            exit 1
-        fi
-    fi
-}
-
-########################################
-# Check if ZED SDK is installed and get its version
-# Globals:
-#  ZED_VERSION
-# Arguments:
-#  None
-# Outputs:
-#  Exits with an error message if ZED SDK is not found, otherwise sets ZED_VERSION variable
-########################################
-require_zedsdk() {
-    log "Checking for ZED SDK installation at /usr/local/zed..."
-    if [[ -f "/usr/local/zed/zed-config-version.cmake" ]]; then
-        ZED_VERSION=$(sudo cat /usr/local/zed/zed-config-version.cmake | grep "set(PACKAGE_VERSION \"" | sed -E 's/set\(PACKAGE_VERSION "(.*)"\)/\1/')
-        log "Found ZED SDK version $ZED_VERSION"
-    else
-        error "ZED SDK not found. Please install it and try again."
-        exit 1
-    fi
-}
-
-#######################################
-# Migrate old installation if it exists
-# Globals:
-#  None
-# Arguments:
-#  None
-# Outputs:
-#  Moves old installation directory to new location if it exists
-#######################################
-migrate_old_installation() {
-    log "Checking for existing installation at $HOME/.loon-env..."
-    local old_path="$HOME/.loon-env"
-    local new_path="/opt/loon-env"
-
-    if [[ -d "$old_path" ]]; then
-        log "Migrating existing installation from $old_path to $new_path..."
-        run sudo mv "$old_path" "$new_path"
-        log "Migration complete."
-    fi
 }
 
 ##################################
@@ -389,13 +208,26 @@ parse_arguments() {
             -v|--verbose) VERBOSE=1 ;;
             -i|--install-deps) INSTALL_DEPS=1 ;;
             --dry-run) DRY_RUN=1 ;;
-            -s|--skip) SKIP_OTHER_COMPONENTS=1 ;;
+            -s|--skip) SKIP_SCRIPTS_AND_MTU=1 ;;
+            --skip-others) SKIP_OTHER_COMPONENTS=1 ;;
             -r|--remove) remove_loon_env; exit 0 ;;
             -f|--force)
                 get_force "$@"
                 break
                 ;;
-            *) error "Unknown option: $1"; usage; exit 1 ;;
+            *)
+                local is_system=0
+                for opt in "${INSTALLATION_OPTIONS[@]}"; do
+                    if [[ "$1" == "$opt" ]]; then
+                        SELECTED_SYSTEMS+=("$1")
+                        is_system=1
+                        break
+                    fi
+                done
+                if [[ "$is_system" -eq 0 ]]; then
+                    error "Unknown option: $1"; usage; exit 1
+                fi
+                ;;
         esac
         shift
     done
@@ -408,7 +240,7 @@ get_force(){
             docker) FORCE_DOCKER_INSTALL=1 ;;
             loone) FORCE_LOONE_INSTALL=1 ;;
             zed) FORCE_ZED_INSTALL=1 ;;
-            -s|--skip) SKIP_OTHER_COMPONENTS=1 ;;
+            --skip-others) SKIP_OTHER_COMPONENTS=1 ;;
             *) break ;;
         esac
         shift
@@ -571,8 +403,20 @@ install_zedsdk() {
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 }
 
+install_zeddriver(){
+    error "ZED Driver installation not implemented yet. Please install ZED Driver manually from https://www.stereolabs.com/docs/ and try again."
+    exit 1
+}
 
-
+install_pnpm() {
+    log "Installing pnpm..."
+    run 'curl -fsSL https://get.pnpm.io/install.sh | sh -'
+    if ! command -v pnpm &> /dev/null; then
+        error "pnpm installation failed."
+        exit 1
+    fi
+    log "pnpm installed successfully."
+}
 
 # >> Main Functions <<
 
@@ -631,58 +475,114 @@ create_group_and_add_user() {
 #  Installs dependencies if --install-deps is specified, migrates old installation if it exists, and installs Loon-Env
 ################################
 installation() {
+    # Let's check which systems we are installing
+    log "[Installation] Checking which components to install based on flags and user input..."
+    for system in "${SELECTED_SYSTEMS[@]}"; do
+        case "$system" in
+            basestation) 
+                log "Basestation installation selected."
+                REQUIRE_ROS=1
+                REQUIRE_ZED_SDK=1
+                REQUIRE_PIP=1
+                REQUIRE_CUDA=1
+                ;;
+            orin) 
+                log "Orin installation selected."
+                REQUIRE_ROS=1
+                REQUIRE_DOCKER=1
+                REQUIRE_ZED_SDK=1
+                REQUIRE_ZED_DRIVER=1
+                REQUIRE_PIP=1
+                REQUIRE_CUDA=1
+            ;;
+            website) 
+                log "Website installation selected." 
+                REQUIRE_PNPM=1
+                ;;
+            all) 
+                log "Full installation selected."
+                REQUIRE_ROS=1
+                REQUIRE_DOCKER=1
+                REQUIRE_ZED_SDK=1
+                REQUIRE_ZED_DRIVER=1
+                REQUIRE_PIP=1
+                REQUIRE_CUDA=1
+                REQUIRE_PNPM=1
+                ;;
+            *) 
+                error "Unknown system: $system"
+                ;;
+        esac
+    done
 
-    # Requirements for installing docker, ros, and zedsdk
-    if [[ "$INSTALL_DEPS" -eq 1 ]]; then
-        log "[Installation] Require APT-GET for dependency installation"
-        require_command "apt-get" \
-            "apt-get is required to install dependencies. Please install apt-get or use install without --install-deps and try again." 
+    run "sudo apt update && sudo apt upgrade"
 
-        log "[Installation] Require curl for dependency installation"
+    # some extra requirements
+    run "sudo apt install -y curl gnupg lsb-release ca-certificates gpg wget git"
 
-        install_dependency "curl" \
-            "curl is required to download dependencies. Please install curl and try again." \
-            "sudo apt-get update && sudo apt-get install -y curl"
+    # Lets check repositories before dependencies since some dependencies require repositories to be added before they can be installed
+    require_apt_repository "Docker" \
+        "Docker Release"
 
-        install_dependency "gnupg" \
-            "gnupg is required to add package repositories. Please install gnupg and try again." \
-            "sudo apt-get update && sudo apt-get install -y gnupg"
-        
-        install_dependency "lsb-release" \
-            "lsb-release is required to detect the operating system version. Please install lsb-release and try again." \
-            "sudo apt-get update && sudo apt-get install -y lsb-release"
-        
-        install_dependency "ca-certificates" \
-            "ca-certificates is required to securely download dependencies. Please install ca-certificates and try again." \
-            "sudo apt-get update && sudo apt-get install -y ca-certificates"
+    require_apt_repository "ROS 2" \
+        "ROS 2 apt repository" \
+    
+    # Let's check for dependencies now, 
+    # since they are required for the rest of the installation process
+    # we don't want to start the installation only to find out later 
+    # that a dependency is missing and have to start over
 
-        install_dependency "gpg" \
-            "gpg is required to verify package signatures. Please install gpg and try again." \
-            "sudo apt-get update && sudo apt-get install -y gpg"
-
-        install_docker
-        install_ros
-        
-        install_zedsdk
+    if [[ "$REQUIRE_DOCKER" -eq 1 ]]; then
+        for dependency in "${DOCKER_APT_DEPENDENCIES[@]}"; do
+            require_apt_package "$dependency" \
+                "$dependency not found; adding to installation list."
+        done
     fi
 
-    install_dependency "wget" \
-            "wget is required to download dependencies. Please install wget and try again." \
-            "sudo apt-get update && sudo apt-get install -y wget"
+    if [[ "$REQUIRE_ROS" -eq 1 ]]; then
+        for dependency in "${ROS_APT_DEPENDENCIES[@]}"; do
+            require_apt_package "$dependency" \
+                "$dependency not found; adding to installation list."
+        done
+    fi
 
-    install_dependency "git" \
-        "git is required to clone the Loon-E repository. Please install git and try again." \
-        "sudo apt-get update && sudo apt-get install -y git"
+    if [[ "$REQUIRE_PIP" -eq 1 ]]; then
+        require_apt_package "python3-pip" \
+            "python3-pip not found; required for pip dependencies."
+    fi
 
-    log "[Installation] Git is available. Proceeding with installation."
+    if [[ "$REQUIRE_CUDA" -eq 1 ]]; then
+        require_command "nvidia-smi" \
+            "NVIDIA GPU not detected. Ensure you are using Jetpack on a compatible NVIDIA Jetson device with proper drivers installed."
+    fi
 
-    # Check for NVIDIA GPU and drivers
-    require_command "nvidia-smi" \
-        "NVIDIA GPU not detected. Ensure you are using Jetpack on a compatible NVIDIA Jetson device with proper drivers installed."
+    install_missing_apt_packages
 
+    if [[ "$REQUIRE_PNPM" -eq 1 ]]; then
+        if ! command -v pnpm &> /dev/null; then
+            install_pnpm
+        fi
+    fi
 
-    log "[Installation] Checking zed sdk installation..."
-    require_zedsdk
+    # Install script uses some required commands
+    # That is why it is last
+    if [[ "$REQUIRE_ZED_SDK" -eq 1 ]]; then
+        if require_zedsdk; then
+            log "ZED SDK is already installed. Skipping ZED SDK installation."
+        else
+            log "ZED SDK not found; installing now"
+            install_zedsdk
+        fi
+    fi
+
+    if [[ "$REQUIRE_ZED_DRIVER" -eq 1 ]]; then
+        if require_zed_driver; then
+            log "ZED Driver is already installed. Skipping ZED Driver installation."
+        else
+            log "ZED Driver not found; installing now"
+            install_zeddriver
+        fi
+    fi
 
     log "[Installation] All dependencies are installed. Proceeding with Loon-Env installation."
 }
@@ -914,7 +814,7 @@ setup_workspace() {
 ##################################
 # Install Loon-Env by copying assets and the main script to their respective locations
 # Globals:
-#  VERSION
+#  LOON_ENV_VERSION
 #  PATH_INSTALL
 #  ASSETS_DIR
 #  LOON_E_SOURCE
@@ -925,8 +825,7 @@ setup_workspace() {
 #  Copies assets to installation directory, overwrites existing files, and installs the main script to /usr/local/bin
 #######################################
 install_loon_env() {
-    migrate_old_installation
-    log "[Install ENV] Installing Loon-Env assets of $VERSION to $PATH_INSTALL"
+    log "[Install ENV] Installing Loon-Env assets of $LOON_ENV_VERSION to $PATH_INSTALL"
     run "sudo mkdir -p  $PATH_INSTALL/assets"
     run "sudo mkdir -p $WORKSPACE_DIR"
 
@@ -1159,6 +1058,16 @@ fi
 log "Detecting various system information for installation..."
 L4T_VERSION="$(sed -n 's/^# \(R[0-9]\+\).*, REVISION: \([0-9.]\+\).*/\1.\2/p' /etc/nv_tegra_release 2>/dev/null || echo "unknown")"
 THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Installer path variables: source dirs derived from THIS_SCRIPT_DIR, install targets from loon_hub constants
+PATH_INSTALL="$LOON_ENV_FOLDER_DIR"
+ASSETS_DIR="$THIS_SCRIPT_DIR/src/assets"
+SCRIPTS_SOURCE="$THIS_SCRIPT_DIR/src/tools/scripts"
+LOONE_SOURCE="$SCRIPTS_SOURCE/LoonE"
+LOONE_SCRIPT_INSTALL="$SCRIPT_PATH/LoonE"
+CONFIG_MTU_SCRIPT_INSTALL="$SCRIPT_PATH/configMTU"
+LOONTOOLS_INSTALL="$SCRIPT_PATH/LoonTools"
+
 USERNAME="$(whoami)"
 USER_HOME="$(eval echo "~$USERNAME")"
 
@@ -1175,9 +1084,11 @@ require_non_root
 create_group_and_add_user
 installation
 install_loon_env
-apply_buffers
-install_config_mtu
-install_loon_tools
+if [[ "$SKIP_SCRIPTS_AND_MTU" -ne 1 ]]; then
+    apply_buffers
+    install_config_mtu
+    install_loon_tools
+fi
 update_git
 setup_workspace
 set_variables
@@ -1191,7 +1102,7 @@ log "Ensure /opt/ros/humble/setup.bash path has correct permissions for sourcing
 run "sudo chmod -R 755 /opt/ros/$ROS_DISTRO"
 run "sudo chown -R :$GROUP_NAME /opt/ros/$ROS_DISTRO"
 
-if [[ "$SKIP_OTHER_COMPONENTS" -ne 1 ]]; then
+if [[ "$SKIP_SCRIPTS_AND_MTU" -ne 1 ]]; then
     read -p "MTU configuration is required for Loon-Env to function properly. Do you want to run the MTU configuration script now? (Y/n) " -n 1 -r
     echo
     if [[ "$REPLY" =~ ^[Yy]$ ]]; then
@@ -1200,7 +1111,7 @@ if [[ "$SKIP_OTHER_COMPONENTS" -ne 1 ]]; then
         log "Skipping MTU configuration script. You can run it later by running sudo $CONFIG_MTU_SCRIPT_INSTALL or configMTU"
     fi  
 else
-    log "Skip other components flag is set. Skipping MTU configuration script."
+    log "Skip scripts and MTU flag is set. Skipping MTU configuration script."
 fi
 
 echo "${GREEN}${BOLD}[INFO] ${PRIMARY}Loon-Env installation complete! Please restart your terminal or run 'source ~/.bashrc' to start using Loon-Env."
