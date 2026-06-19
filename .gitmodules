@@ -13,3 +13,6 @@
 [submodule "src/loon_ws"]
 	path = src/loon_ws
 	url = https://github.com/HumberASV/loon-e.git
+[submodule "src/basestation_ws"]
+	path = src/basestation_ws
+	url = https://github.com/HumberASV/Base-Station-Flask.git
