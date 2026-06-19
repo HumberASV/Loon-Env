@@ -265,26 +265,27 @@ install_docker() {
         return
     fi
 
+    local DOCKER_KEYRING="/etc/apt/keyrings/docker.gpg"
+
     log "Checking GPG key for Docker repository..."
-    # check GPG key for Docker repository
-    if ! gpg --list-keys | grep -q "Docker Release"; then
+    if ! gpg --no-default-keyring --keyring "$DOCKER_KEYRING" --list-keys 2>/dev/null | grep -q "Docker Release"; then
         log "Adding Docker GPG key..."
         run 'sudo install -m 0755 -d /etc/apt/keyrings'
-        run 'sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor > /usr/share/keyrings/docker-archive-keyring.gpg'
-        run 'sudo chmod a+r /etc/apt/keyrings/docker.gpg'
+        run 'curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor | sudo tee '"$DOCKER_KEYRING"' > /dev/null'
+        run 'sudo chmod a+r '"$DOCKER_KEYRING"
 
         log "Verifying Docker GPG key..."
-        if ! gpg --keyring /usr/share/keyrings/docker-archive-keyring.gpg --list-keys | grep -q "Docker Release"; then
-                error "Failed to verify Docker GPG key."
+        if ! gpg --no-default-keyring --keyring "$DOCKER_KEYRING" --list-keys 2>/dev/null | grep -q "Docker Release"; then
+            error "Failed to verify Docker GPG key."
             exit 1
         else
             log "Docker GPG key verified successfully."
         fi
 
         log "Adding Docker repository to APT sources..."
-        run bash -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null'
+        run bash -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by='"$DOCKER_KEYRING"'] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null'
 
-        log "verifying Docker repository..."
+        log "Verifying Docker repository..."
         if ! grep -q "download.docker.com" /etc/apt/sources.list.d/docker.list; then
             error "Failed to verify Docker repository."
             exit 1
@@ -297,7 +298,6 @@ install_docker() {
         run sudo apt-cache policy docker-ce
         run sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-        # Verify Docker installation
         if ! command -v docker &> /dev/null; then
             error "Docker installation failed."
             exit 1
@@ -393,19 +393,22 @@ install_zedsdk() {
                 error "Invalid format. Please enter in the format X.X (e.g. 36.4), or end installation."
             fi
         done
-        return
     fi
     log "Installing ZED SDK..."
+    local SHORT_L4T=""
     if [[ $L4T_VERSION =~ ^R([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
-        local SHORT_L4T="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+        SHORT_L4T="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+    elif [[ $L4T_VERSION =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+        SHORT_L4T="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
     fi
     run wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${SHORT_L4T}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
 }
 
 install_zeddriver(){
-    error "ZED Driver installation not implemented yet. Please install ZED Driver manually from https://www.stereolabs.com/docs/ and try again."
-    exit 1
+    warn "Automatic ZED Driver installation is not yet implemented."
+    warn "Please install the ZED X Daemon manually from https://www.stereolabs.com/docs/ and re-run the installer."
+    return 1
 }
 
 install_pnpm() {
@@ -522,10 +525,10 @@ installation() {
 
     # Lets check repositories before dependencies since some dependencies require repositories to be added before they can be installed
     require_apt_repository "Docker" \
-        "Docker Release"
+        "download.docker.com"
 
     require_apt_repository "ROS 2" \
-        "ROS 2 apt repository" \
+        "packages.ros.org" \
     
     # Let's check for dependencies now, 
     # since they are required for the rest of the installation process
@@ -580,7 +583,10 @@ installation() {
             log "ZED Driver is already installed. Skipping ZED Driver installation."
         else
             log "ZED Driver not found; installing now"
-            install_zeddriver
+            if ! install_zeddriver; then
+                error "ZED Driver installation failed. Please install it manually and re-run."
+                exit 1
+            fi
         fi
     fi
 
