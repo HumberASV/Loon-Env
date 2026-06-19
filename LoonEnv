@@ -692,6 +692,21 @@ download_dependencies_for_zed_wrapper() {
 }
 
 
+##################################
+# Check if a directory has uncommitted git changes
+# Arguments:
+#  $1 - directory to check
+# Returns:
+#  0 if uncommitted changes exist, 1 if clean or not a git repo
+##################################
+has_uncommitted_changes() {
+    local dir="$1"
+    if [[ ! -d "$dir/.git" ]]; then
+        return 1
+    fi
+    [[ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]]
+}
+
 ###############################
 # Sets up our workspace and downloads the git repositories for docker use
 # Globals:
@@ -723,23 +738,36 @@ setup_workspace() {
     loon_ws() {
 
         # if $WORKSPACE_DIR/loon_ws is empty
-        if [[ ! $(ls -A $WORKSPACE_DIR/loon_ws) ]]; then 
+        if [[ ! $(ls -A $WORKSPACE_DIR/loon_ws) ]]; then
             run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
             log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
         else # not empty
-            warn "Existing loon_ws found in workspace directory but it is not empty."
-            if [[ "$FORCE_LOONE_INSTALL" -eq 1 ]]  || \
-                confirm "Do you want to overwrite the existing loon_ws in the workspace directory with the one in $BLUE./src?$PRIMARY (This will delete any existing files in $WORKSPACE_DIR/loon_ws)?"; then
-                
+            warn "Existing$BLUE loon_ws$PRIMARY found in workspace directory and it is not empty."
+            if has_uncommitted_changes "$WORKSPACE_DIR/loon_ws"; then
+                warn "$WORKSPACE_DIR/loon_ws has uncommitted changes."
                 if [[ "$FORCE_LOONE_INSTALL" -eq 1 ]]; then
-                    log "Force flag for LoonE installation is set. Overwriting existing loon_ws in workspace directory with the one in ./src..."
+                    warn "Force flag is set. Overwriting$BLUE loon_ws$PRIMARY despite uncommitted changes."
+                    run rm -rf "$WORKSPACE_DIR/loon_ws/"
+                    run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
+                    log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
+                else
+                    warn "Skipping$BLUE loon_ws$PRIMARY overwrite to preserve uncommitted changes. Use${BOLD} -f loone${PRIMARY} to force overwrite."
                 fi
-
-                run rm -rf "$WORKSPACE_DIR/loon_ws/"
-                run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
-                log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
             else
-                log "[Setup Workspace] Skipping move of$BLUE loon_ws$PRIMARY to workspace directory."
+                log "[Setup Workspace]$BLUE loon_ws$PRIMARY has no uncommitted changes."
+                if [[ "$FORCE_LOONE_INSTALL" -eq 1 ]] || \
+                    confirm "Do you want to overwrite the existing loon_ws in the workspace directory with the one in $BLUE./src?$PRIMARY (This will delete any existing files in $WORKSPACE_DIR/loon_ws)?"; then
+
+                    if [[ "$FORCE_LOONE_INSTALL" -eq 1 ]]; then
+                        log "Force flag for LoonE installation is set. Overwriting existing loon_ws in workspace directory with the one in ./src..."
+                    fi
+
+                    run rm -rf "$WORKSPACE_DIR/loon_ws/"
+                    run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
+                    log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
+                else
+                    log "[Setup Workspace] Skipping move of$BLUE loon_ws$PRIMARY to workspace directory."
+                fi
             fi
         fi
     }
@@ -751,19 +779,33 @@ setup_workspace() {
             download_dependencies_for_zed_wrapper
             run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
         else #not empty
-            warn "Existing$BLUE zed_ws$PRIMARY found in$BLUE $WORKSPACE_DIR/zed_ws $PRIMARY but it is not empty."
-            if [[ "$FORCE_ZED_INSTALL" -eq 1 ]] || \
-                confirm "Do you want to overwrite the existing$BLUE zed_ws$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
-                
+            warn "Existing$BLUE zed_ws$PRIMARY found in$BLUE $WORKSPACE_DIR/zed_ws$PRIMARY but it is not empty."
+            if has_uncommitted_changes "$WORKSPACE_DIR/zed_ws"; then
+                warn "$WORKSPACE_DIR/zed_ws has uncommitted changes."
                 if [[ "$FORCE_ZED_INSTALL" -eq 1 ]]; then
-                    log "Force flag for ZED ROS2 Wrapper installation is set. Overwriting existing zed_ws in workspace directory with the one in ./src..."
+                    warn "Force flag is set. Overwriting$BLUE zed_ws$PRIMARY despite uncommitted changes."
+                    download_dependencies_for_zed_wrapper
+                    rm -rf "$WORKSPACE_DIR/zed_ws/"
+                    run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
+                    log "[Setup Workspace] Moved$BLUE zed_ws$PRIMARY to workspace directory."
+                else
+                    warn "Skipping$BLUE zed_ws$PRIMARY overwrite to preserve uncommitted changes. Use${BOLD} -f zed${PRIMARY} to force overwrite."
                 fi
-                download_dependencies_for_zed_wrapper # also cleans the src directory while preserving zed_ros_examples and zed_ros2_wrapper
-                rm -rf "$WORKSPACE_DIR/zed_ws/"
-                run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
-                log "[Setup Workspace] Moved zed_ws to workspace directory."
             else
-                log "[Setup Workspace] Skipping move for ZED ROS2 Wrapper into ./src/zed_ws/src."
+                log "[Setup Workspace]$BLUE zed_ws$PRIMARY has no uncommitted changes."
+                if [[ "$FORCE_ZED_INSTALL" -eq 1 ]] || \
+                    confirm "Do you want to overwrite the existing$BLUE zed_ws$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
+
+                    if [[ "$FORCE_ZED_INSTALL" -eq 1 ]]; then
+                        log "Force flag for ZED ROS2 Wrapper installation is set. Overwriting existing zed_ws in workspace directory with the one in ./src..."
+                    fi
+                    download_dependencies_for_zed_wrapper
+                    rm -rf "$WORKSPACE_DIR/zed_ws/"
+                    run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
+                    log "[Setup Workspace] Moved$BLUE zed_ws$PRIMARY to workspace directory."
+                else
+                    log "[Setup Workspace] Skipping move for ZED ROS2 Wrapper into ./src/zed_ws/src."
+                fi
             fi
         fi
     }
