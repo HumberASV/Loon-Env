@@ -33,10 +33,11 @@ VERSION="4.0.2" # Change this on each release
 # Fix: 
 PATH_INSTALL="/opt/loon-env"
 LOONTOOLS_INSTALL="/usr/local/bin/LoonTools"
-LOONE_SCRIPT_INSTALL="/usr/local/bin/LoonE"
+LOON_HUB_INSTALL="/usr/local/bin/loon_hub"
+LOONDOCK_SCRIPT_INSTALL="/usr/local/bin/LoonDock"
 CONFIG_MTU_SCRIPT_INSTALL="/usr/local/bin/configMTU"
 SCRIPTS_SOURCE="./src/tools/scripts"
-LOONE_SOURCE=$SCRIPTS_SOURCE/LoonE
+LOONDOCK_SOURCE=$SCRIPTS_SOURCE/LoonDock
 ASSETS_DIR="./src/assets"
 WORKSPACE_DIR="/home/$(whoami)/LoonE_ws"
 GROUP_NAME="loon-env-users"
@@ -66,6 +67,11 @@ BOLD=$(tput bold)
 
 # Variables to hold detected versions
 ZED_SDK_VERSION="5.2" #Default
+
+# Default branch/ref to check out after cloning the ZED ROS2 wrapper repo.
+# LoonDock's build --virtual/--hardware flags check out a different ref on
+# this same clone before building, this is only the ref used on first clone.
+ZED_WRAPPER_DEFAULT_REF="zedx"
 
 # TODO: Add support for other ROS distros and operating systems in the future
 ROS_DISTRO="humble" # Default
@@ -317,6 +323,9 @@ require_zedsdk() {
     if [[ -f "/usr/local/zed/zed-config-version.cmake" ]]; then
         ZED_VERSION=$(sudo cat /usr/local/zed/zed-config-version.cmake | grep "set(PACKAGE_VERSION \"" | sed -E 's/set\(PACKAGE_VERSION "(.*)"\)/\1/')
         log "Found ZED SDK version $ZED_VERSION"
+    elif [[ "$DRY_RUN" -eq 1 ]]; then
+        warn "ZED SDK not found (continuing because --dry-run is set)."
+        ZED_VERSION="dry-run-unknown"
     else
         error "ZED SDK not found. Please install it and try again."
         exit 1
@@ -438,11 +447,11 @@ install_docker() {
     if ! gpg --list-keys | grep -q "Docker Release"; then
         log "Adding Docker GPG key..."
         run 'sudo install -m 0755 -d /etc/apt/keyrings'
-        run 'sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor > /usr/share/keyrings/docker-archive-keyring.gpg'
+        run 'curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor | sudo tee /etc/apt/keyrings/docker.gpg > /dev/null'
         run 'sudo chmod a+r /etc/apt/keyrings/docker.gpg'
 
         log "Verifying Docker GPG key..."
-        if ! gpg --keyring /usr/share/keyrings/docker-archive-keyring.gpg --list-keys | grep -q "Docker Release"; then
+        if ! gpg --keyring /etc/apt/keyrings/docker.gpg --list-keys | grep -q "Docker Release"; then
                 error "Failed to verify Docker GPG key."
             exit 1
         else
@@ -486,10 +495,15 @@ install_docker() {
 ##################################
 install_ros() {
     log "Checking for nvidia jetpack"
-    local nvidia_jetpack_installed=$(dpkg -l | grep nvidia-jetpack)
+    local nvidia_jetpack_installed
+    nvidia_jetpack_installed=$(dpkg -l | grep nvidia-jetpack || true)
     if [[ -z "$nvidia_jetpack_installed" ]]; then
-        error "NVIDIA Jetpack not found. Please install NVIDIA Jetpack and try again."
-        exit 1
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            warn "NVIDIA Jetpack not found (continuing because --dry-run is set)."
+        else
+            error "NVIDIA Jetpack not found. Please install NVIDIA Jetpack and try again."
+            exit 1
+        fi
     fi
     log "NVIDIA Jetpack detected. Proceeding with ROS 2 installation check."
 
@@ -564,8 +578,11 @@ install_zedsdk() {
         return
     fi
     log "Installing ZED SDK..."
+    local SHORT_L4T=""
     if [[ $L4T_VERSION =~ ^R([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
-        local SHORT_L4T="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+        SHORT_L4T="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+    elif [[ $L4T_VERSION =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+        SHORT_L4T="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
     fi
     run wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${SHORT_L4T}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
@@ -677,8 +694,14 @@ installation() {
     log "[Installation] Git is available. Proceeding with installation."
 
     # Check for NVIDIA GPU and drivers
-    require_command "nvidia-smi" \
-        "NVIDIA GPU not detected. Ensure you are using Jetpack on a compatible NVIDIA Jetson device with proper drivers installed."
+    if ! command -v nvidia-smi &> /dev/null; then
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            warn "NVIDIA GPU not detected (continuing because --dry-run is set)."
+        else
+            error "NVIDIA GPU not detected. Ensure you are using Jetpack on a compatible NVIDIA Jetson device with proper drivers installed."
+            exit 1
+        fi
+    fi
 
 
     log "[Installation] Checking zed sdk installation..."
@@ -714,8 +737,6 @@ set_variables() {
         run 'echo "export XAUTHORITY=/home/'$(whoami)'/.Xauthority" >> ~/.loon_env_setup.bash'
         run 'echo "export L4T_VERSION='$L4T_VERSION'" >> ~/.loon_env_setup.bash'
         run 'echo "export CYCLONEDDS_URI=file:///opt/cyclonedds.xml" >> ~/.loon_env_setup.bash'
-        # Default wrapper ref: streaming for virtual builds, zedx for hardware builds (LoonE will override per-profile)
-        run 'echo "export ZED_WRAPPER_GIT_REF=zedx" >> ~/.loon_env_setup.bash'
         log "[Set Variables] Environment variables set and exported to ~/.loon_env_setup.bash"
     fi
     log "[Set Variables] Setting ~/.bashrc to source ~/.loon_env_setup.bash if it exists"
@@ -752,23 +773,25 @@ download_dependencies_for_zed_wrapper() {
     local BACKWARD_ROS_VERSION=1.0.7
     local PYPI_URL=https://pypi.jetson-ai-lab.io/jp6/cu126
 
-    run 'find ./src/zed_ws/src -mindepth 1 -maxdepth 1 ! -name "zed_ros_examples" ! -name "zed_ros2_wrapper" ! -name "interfaces" -exec rm -rf {} +'
+    local zed_ws_src="$WORKSPACE_DIR/zed_ws/src"
+
+    run "find '$zed_ws_src' -mindepth 1 -maxdepth 1 ! -name 'zed_ros_examples' ! -name 'zed_ros2_wrapper' ! -name 'interfaces' -exec rm -rf {} +"
     log "[Download] Cleaned existing src directory while preserving zed_ros_examples and zed_ros2_wrapper"
     log "$BOLD[Download] Downloading a ton of git repostiories for zed wrapper$PRIMARY"
-    log "[Download] Downloading dependencies for ZED ROS2 Wrapper into ./src/zed_ws/src..."
-    run "wget -qO- https://github.com/ros/xacro/archive/refs/tags/${XACRO_VERSION}.tar.gz | tar -xvz && mv xacro-${XACRO_VERSION} ./src/zed_ws/src/xacro"
-    run "wget -qO- https://github.com/ros/diagnostics/archive/refs/tags/${DIAGNOSTICS_VERSION}.tar.gz | tar -xvz && mv diagnostics-${DIAGNOSTICS_VERSION} ./src/zed_ws/src/diagnostics"
-    run "wget -qO- https://github.com/ament/ament_lint/archive/refs/tags/${AMENT_LINT_VERSION}.tar.gz | tar -xvz && mv ament_lint-${AMENT_LINT_VERSION} ./src/zed_ws/src/ament-lint"
-    run "wget -qO- https://github.com/cra-ros-pkg/robot_localization/archive/refs/tags/${ROBOT_LOCALIZATION_VERSION}.tar.gz | tar -xvz && mv robot_localization-${ROBOT_LOCALIZATION_VERSION} ./src/zed_ws/src/robot-localization"
-    #run "wget -qO- https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_nitros/archive/refs/tags/v3.2-13.tar.gz | tar -xvz && mv isaac_ros_nitros-3.2-13 ./src/zed_ws/src/isaac_ros_nitros"
-    #run "wget -qO- https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/${ZED_MSGS_VERSION}.tar.gz | tar -xvz && mv zed-ros2-interfaces-${ZED_MSGS_VERSION} ./src/zed_ws/src/zed-ros2-interfaces"
-    run "wget -qO- https://github.com/ros-drivers/nmea_msgs/archive/refs/tags/${NMEA_MSGS_VERSION}.tar.gz | tar -xvz && mv nmea_msgs-${NMEA_MSGS_VERSION} ./src/zed_ws/src/nmea_msgs"
-    run "wget -qO- https://github.com/ros/angles/archive/refs/tags/${ANGLES_VERSION}.tar.gz | tar -xvz && mv angles-${ANGLES_VERSION} ./src/zed_ws/src/angles"
-    run "wget -qO- https://github.com/ros2/rmw_cyclonedds/archive/refs/tags/${RMW_CYCLONEDDS_VERSION}.tar.gz | tar -xvz && mv rmw_cyclonedds-${RMW_CYCLONEDDS_VERSION} ./src/zed_ws/src/rmw_cyclonedds"
-    run "wget -qO- https://github.com/ros-geographic-info/geographic_info/archive/refs/tags/${GEOGRAPHIC_INFO_VERSION}.tar.gz | tar -xvz && mv geographic_info-${GEOGRAPHIC_INFO_VERSION} ./src/zed_ws/src/geographic-info"
-    run "wget -qO- https://github.com/pal-robotics/backward_ros/archive/refs/tags/${BACKWARD_ROS_VERSION}.tar.gz | tar -xvz && mv backward_ros-${BACKWARD_ROS_VERSION} ./src/zed_ws/src/backward_ros"
-    run "cp -r ./src/zed_ws/src/geographic-info/geographic_msgs/ ./src/zed_ws/src/geographic-msgs/"
-    run "rm -rf ./src/zed_ws/src/geographic-info"
+    log "[Download] Downloading dependencies for ZED ROS2 Wrapper into $zed_ws_src..."
+    run "wget -qO- https://github.com/ros/xacro/archive/refs/tags/${XACRO_VERSION}.tar.gz | tar -xvz && mv xacro-${XACRO_VERSION} '$zed_ws_src/xacro'"
+    run "wget -qO- https://github.com/ros/diagnostics/archive/refs/tags/${DIAGNOSTICS_VERSION}.tar.gz | tar -xvz && mv diagnostics-${DIAGNOSTICS_VERSION} '$zed_ws_src/diagnostics'"
+    run "wget -qO- https://github.com/ament/ament_lint/archive/refs/tags/${AMENT_LINT_VERSION}.tar.gz | tar -xvz && mv ament_lint-${AMENT_LINT_VERSION} '$zed_ws_src/ament-lint'"
+    run "wget -qO- https://github.com/cra-ros-pkg/robot_localization/archive/refs/tags/${ROBOT_LOCALIZATION_VERSION}.tar.gz | tar -xvz && mv robot_localization-${ROBOT_LOCALIZATION_VERSION} '$zed_ws_src/robot-localization'"
+    #run "wget -qO- https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_nitros/archive/refs/tags/v3.2-13.tar.gz | tar -xvz && mv isaac_ros_nitros-3.2-13 '$zed_ws_src/isaac_ros_nitros'"
+    #run "wget -qO- https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/${ZED_MSGS_VERSION}.tar.gz | tar -xvz && mv zed-ros2-interfaces-${ZED_MSGS_VERSION} '$zed_ws_src/zed-ros2-interfaces'"
+    run "wget -qO- https://github.com/ros-drivers/nmea_msgs/archive/refs/tags/${NMEA_MSGS_VERSION}.tar.gz | tar -xvz && mv nmea_msgs-${NMEA_MSGS_VERSION} '$zed_ws_src/nmea_msgs'"
+    run "wget -qO- https://github.com/ros/angles/archive/refs/tags/${ANGLES_VERSION}.tar.gz | tar -xvz && mv angles-${ANGLES_VERSION} '$zed_ws_src/angles'"
+    run "wget -qO- https://github.com/ros2/rmw_cyclonedds/archive/refs/tags/${RMW_CYCLONEDDS_VERSION}.tar.gz | tar -xvz && mv rmw_cyclonedds-${RMW_CYCLONEDDS_VERSION} '$zed_ws_src/rmw_cyclonedds'"
+    run "wget -qO- https://github.com/ros-geographic-info/geographic_info/archive/refs/tags/${GEOGRAPHIC_INFO_VERSION}.tar.gz | tar -xvz && mv geographic_info-${GEOGRAPHIC_INFO_VERSION} '$zed_ws_src/geographic-info'"
+    run "wget -qO- https://github.com/pal-robotics/backward_ros/archive/refs/tags/${BACKWARD_ROS_VERSION}.tar.gz | tar -xvz && mv backward_ros-${BACKWARD_ROS_VERSION} '$zed_ws_src/backward_ros'"
+    run "cp -r '$zed_ws_src/geographic-info/geographic_msgs/' '$zed_ws_src/geographic-msgs/'"
+    run "rm -rf '$zed_ws_src/geographic-info'"
 }
 
 
@@ -782,70 +805,31 @@ download_dependencies_for_zed_wrapper() {
 #  Creates the ROS 2 workspace directory structure and source file for environment variables
 ###############################
 setup_workspace() {
-   
+
 
     local src_dir="$WORKSPACE_DIR"
 
-    log "[Setup Workspace] updating git submodules for loon-env installation..."
-    run git submodule update --init --recursive
-
     log "[Setup Workspace] Creating ROS 2 workspace at $WORKSPACE_DIR..."
     run 'mkdir -p '$src_dir
-    run 'mkdir -p '$WORKSPACE_DIR'/zed_ws'
+    run 'mkdir -p '$WORKSPACE_DIR'/zed_ws/src'
     run 'mkdir -p '$WORKSPACE_DIR'/loon_ws'
     run 'mkdir -p '$WORKSPACE_DIR'/docker'
-    log $(ls -A $WORKSPACE_DIR/loon_ws)
-    log $(ls -A $WORKSPACE_DIR/zed_ws)
-    log $(ls -A $WORKSPACE_DIR/docker)
 
-    log "[Setup Workspace] Moving$BLUE ./src/loon_ws$PRIMARY to $WORKSPACE_DIR/loon_ws if it exists..."
+    log "[Setup Workspace] Cloning$BLUE loon_ws$PRIMARY (Loon-E) into $WORKSPACE_DIR/loon_ws if needed..."
 
     loon_ws() {
-
-        # if $WORKSPACE_DIR/loon_ws is empty
-        if [[ ! $(ls -A $WORKSPACE_DIR/loon_ws) ]]; then 
-            run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
-            log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
-        else # not empty
-            warn "Existing loon_ws found in workspace directory but it is not empty."
-            if [[ "$FORCE_LOONE_INSTALL" -eq 1 ]]  || \
-                confirm "Do you want to overwrite the existing loon_ws in the workspace directory with the one in $BLUE./src?$PRIMARY (This will delete any existing files in $WORKSPACE_DIR/loon_ws)?"; then
-                
-                if [[ "$FORCE_LOONE_INSTALL" -eq 1 ]]; then
-                    log "Force flag for LoonE installation is set. Overwriting existing loon_ws in workspace directory with the one in ./src..."
-                fi
-
-                run rm -rf "$WORKSPACE_DIR/loon_ws/"
-                run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
-                log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
-            else
-                log "[Setup Workspace] Skipping move of$BLUE loon_ws$PRIMARY to workspace directory."
-            fi
-        fi
+        clone_workspace_repo "https://github.com/HumberASV/loon-e.git" \
+            "$WORKSPACE_DIR/loon_ws" "main" "$FORCE_LOONE_INSTALL" "loon_ws (Loon-E)"
     }
- 
+
     zed_ws() {
-        # if empty
-        if [[ ! $(ls -A $WORKSPACE_DIR/zed_ws) ]]; then
-            run 'git submodule update --init --recursive'
-            download_dependencies_for_zed_wrapper
-            run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
-        else #not empty
-            warn "Existing$BLUE zed_ws$PRIMARY found in$BLUE $WORKSPACE_DIR/zed_ws $PRIMARY but it is not empty."
-            if [[ "$FORCE_ZED_INSTALL" -eq 1 ]] || \
-                confirm "Do you want to overwrite the existing$BLUE zed_ws$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
-                
-                if [[ "$FORCE_ZED_INSTALL" -eq 1 ]]; then
-                    log "Force flag for ZED ROS2 Wrapper installation is set. Overwriting existing zed_ws in workspace directory with the one in ./src..."
-                fi
-                download_dependencies_for_zed_wrapper # also cleans the src directory while preserving zed_ros_examples and zed_ros2_wrapper
-                rm -rf "$WORKSPACE_DIR/zed_ws/"
-                run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
-                log "[Setup Workspace] Moved zed_ws to workspace directory."
-            else
-                log "[Setup Workspace] Skipping move for ZED ROS2 Wrapper into ./src/zed_ws/src."
-            fi
-        fi
+        clone_workspace_repo "https://github.com/HumberASV/zed-ros2-wrapper.git" \
+            "$WORKSPACE_DIR/zed_ws/src/zed_ros2_wrapper" "$ZED_WRAPPER_DEFAULT_REF" "$FORCE_ZED_INSTALL" "zed_ros2_wrapper"
+        clone_workspace_repo "https://github.com/stereolabs/zed-ros2-examples.git" \
+            "$WORKSPACE_DIR/zed_ws/src/zed_ros_examples" "master" "$FORCE_ZED_INSTALL" "zed_ros_examples"
+        clone_workspace_repo "https://github.com/stereolabs/zed-ros2-interfaces.git" \
+            "$WORKSPACE_DIR/zed_ws/src/interfaces" "5.3.0" "$FORCE_ZED_INSTALL" "zed-ros2-interfaces"
+        download_dependencies_for_zed_wrapper
     }
 
     docker_ws() {
@@ -917,8 +901,8 @@ setup_workspace() {
 #  VERSION
 #  PATH_INSTALL
 #  ASSETS_DIR
-#  LOON_E_SOURCE
-#  LOON_E_SCRIPT_INSTALL
+#  LOONDOCK_SOURCE
+#  LOONDOCK_SCRIPT_INSTALL
 # Arguments:
 #  None
 # Outputs:
@@ -944,39 +928,44 @@ install_loon_env() {
     log "[Install ENV] Setting ownership for $PATH_INSTALL to $USERNAME:$GROUP_NAME"
     run "sudo chown -R $USERNAME:$GROUP_NAME $PATH_INSTALL"
 
-    log "[Install ENV] Moving copy of Loon-Env script to $LOONE_SCRIPT_INSTALL"
-    run "sudo mkdir -p $(dirname $LOONE_SCRIPT_INSTALL)"
-    if [[ ! -f "$LOONE_SOURCE" ]]; then
-        error "LoonE source not found at $LOONE_SOURCE"
+    log "[Install ENV] Moving copy of Loon-Env script to $LOONDOCK_SCRIPT_INSTALL"
+    run "sudo mkdir -p $(dirname $LOONDOCK_SCRIPT_INSTALL)"
+    if [[ ! -f "$LOONDOCK_SOURCE" ]]; then
+        error "LoonDock source not found at $LOONDOCK_SOURCE"
         exit 1
     fi
-    run "sudo rm -f $LOONE_SCRIPT_INSTALL"
-    run "sudo cp $LOONE_SOURCE $LOONE_SCRIPT_INSTALL"
-    
-    log "[Install ENV] Loon-Env script copied to $LOONE_SCRIPT_INSTALL"
+    run "sudo rm -f $LOONDOCK_SCRIPT_INSTALL"
+    run "sudo cp $LOONDOCK_SOURCE $LOONDOCK_SCRIPT_INSTALL"
+
+    log "[Install ENV] Loon-Env script copied to $LOONDOCK_SCRIPT_INSTALL"
 
     # Set group ownership and permissions for the script
-    run "sudo chown :$GROUP_NAME $LOONE_SCRIPT_INSTALL"
+    run "sudo chown :$GROUP_NAME $LOONDOCK_SCRIPT_INSTALL"
 
     # Make the script executable
-    run "sudo chmod 755 $LOONE_SCRIPT_INSTALL"
-    
-    log "[Install ENV] Permissions set for $LOONE_SCRIPT_INSTALL: group ownership to $GROUP_NAME and executable by all users."
+    run "sudo chmod 755 $LOONDOCK_SCRIPT_INSTALL"
 
-    # Verify installation
-    if [[ -f "$LOONE_SCRIPT_INSTALL" ]]; then
-        log "[Install ENV] Loon-Env script installed successfully at $LOONE_SCRIPT_INSTALL."
-    else
-        error "Failed to install Loon-Env script."
-        exit 1
-    fi
+    log "[Install ENV] Permissions set for $LOONDOCK_SCRIPT_INSTALL: group ownership to $GROUP_NAME and executable by all users."
 
-    # verify assets installation
-    if [[ -d "$PATH_INSTALL/assets" ]]; then
-        log "[Install ENV] Loon-Env assets installed successfully at $PATH_INSTALL/assets."
+    # Verify installation - skipped under --dry-run since run() never
+    # actually copies anything, so these paths would never exist yet
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        log "[Install ENV] Skipping install verification because --dry-run is set."
     else
-        error "Failed to install Loon-Env assets."
-        exit 1
+        if [[ -f "$LOONDOCK_SCRIPT_INSTALL" ]]; then
+            log "[Install ENV] Loon-Env script installed successfully at $LOONDOCK_SCRIPT_INSTALL."
+        else
+            error "Failed to install Loon-Env script."
+            exit 1
+        fi
+
+        # verify assets installation
+        if [[ -d "$PATH_INSTALL/assets" ]]; then
+            log "[Install ENV] Loon-Env assets installed successfully at $PATH_INSTALL/assets."
+        else
+            error "Failed to install Loon-Env assets."
+            exit 1
+        fi
     fi
 
     log "[Setup Workspace] Setting ownership for workspace directories to $USERNAME:$GROUP_NAME"
@@ -1009,15 +998,16 @@ install_config_mtu(){
 
 
 #################################
-# Install LoonTools
+# Install LoonTools and its shared loon_hub dependency
 # Globals:
 #  PATH_INSTALL
 #  THIS_SCRIPT_DIR
 #  GROUP_NAME
+#  LOON_HUB_INSTALL
 # Arguments:
 #  None
 # Outputs:
-# Copies the tools directory to the installation directory, sets group ownership and permissions
+# Copies the tools directory and loon_hub to the installation directory, sets group ownership and permissions
 #################################
 install_loon_tools() {
     log "[Install Tools] Installing LoonTools to $LOONTOOLS_INSTALL"
@@ -1031,13 +1021,21 @@ install_loon_tools() {
     run 'sudo chown -R :'$GROUP_NAME $LOONTOOLS_INSTALL
     run 'sudo chmod -R 755 '$LOONTOOLS_INSTALL
     log "[Install Tools] LoonTools installed to $LOONTOOLS_INSTALL with permissions set."
+
+    log "[Install Tools] Installing shared loon_hub dependency to $LOON_HUB_INSTALL"
+    run 'sudo rm -f '$LOON_HUB_INSTALL
+    run 'sudo cp '$THIS_SCRIPT_DIR'/src/tools/scripts/dependency/loon_hub '$LOON_HUB_INSTALL
+    run 'sudo chown :'$GROUP_NAME $LOON_HUB_INSTALL
+    run 'sudo chmod 755 '$LOON_HUB_INSTALL
+    log "[Install Tools] loon_hub installed to $LOON_HUB_INSTALL with permissions set."
 }
 
 #################################
 # Remove Loon-Env installation by deleting the installation directory and main script
 # Globals:
 #  PATH_INSTALL
-#  LOON_E_SCRIPT_INSTALL
+#  LOONDOCK_SCRIPT_INSTALL
+#  LOON_HUB_INSTALL
 # Arguments:
 #  None
 # Outputs:
@@ -1046,25 +1044,12 @@ install_loon_tools() {
 remove_loon_env() {
     log "Removing Loon-Env installation..."
     run 'sudo rm -rf '$PATH_INSTALL
-    run 'sudo rm -f '$LOONE_SCRIPT_INSTALL
+    run 'sudo rm -f '$LOONDOCK_SCRIPT_INSTALL
+    run 'sudo rm -f '$LOON_HUB_INSTALL
     run 'sudo rm -f '$CONFIG_MTU_SCRIPT_INSTALL
     echo "${GREEN}${BOLD}[INFO] ${PRIMARY}Loon-Env installation removed successfully. Sorry to see you go! (not actually sorry)"
 }
 
-
-#################################
-# update repositories
-# Globals:
-# None
-# Arguements:
-# None:
-# Outputs:
-# New repository if user selects or force flag is set, otherwise does nothing
-#################################
-update_git() {
-    log "[Git Updater] Checking src directory"
-    check_repo "./src/loon_ws/src/loon_e" "LoonE" "$FORCE_LOONE_INSTALL"
-}
 
 #################################
 # Checks a repo for updates and asks
@@ -1099,9 +1084,51 @@ check_repo(){
     fi
 }
 
+#################################
+# Clones a repo into the workspace if the target directory is missing/empty.
+# If it already exists and is non-empty, offers to remove and re-clone
+# (respecting a force flag/confirm), otherwise falls back to check_repo()
+# to look for upstream updates on the existing clone.
+# Globals:
+# None
+# Arguments:
+# $1 - repo_url
+# $2 - target_dir
+# $3 - ref (branch/tag/commit to check out after cloning; may be empty)
+# $4 - force_flag
+# $5 - friendly name for logging
+#################################
+clone_workspace_repo() {
+    local repo_url="$1"
+    local target_dir="$2"
+    local ref="$3"
+    local force_flag="$4"
+    local name="$5"
+
+    if [[ ! -d "$target_dir" || ! $(ls -A "$target_dir" 2>/dev/null) ]]; then
+        log "[Setup Workspace] Cloning $name into $target_dir..."
+        run "git clone --recurse-submodules '$repo_url' '$target_dir'"
+        [[ -n "$ref" ]] && run "(cd '$target_dir' && git fetch --all --tags && git checkout '$ref' && git submodule update --init --recursive)"
+    else
+        warn "Existing ${BLUE}$name${PRIMARY} clone found at ${BLUE}$target_dir${PRIMARY} but it is not empty."
+        if [[ "$force_flag" -eq 1 ]] || confirm "Remove and re-clone $name at $target_dir? (this discards any local changes)"; then
+            [[ "$force_flag" -eq 1 ]] && log "Force flag set for $name. Re-cloning..."
+            run "rm -rf '$target_dir'"
+            run "git clone --recurse-submodules '$repo_url' '$target_dir'"
+            [[ -n "$ref" ]] && run "(cd '$target_dir' && git fetch --all --tags && git checkout '$ref' && git submodule update --init --recursive)"
+        else
+            log "[Setup Workspace] Skipping re-clone of $name; checking for upstream updates instead..."
+            check_repo "$target_dir" "$name" "$force_flag"
+        fi
+    fi
+}
+
 # >>> Main Script <<<
 
 parse_arguments "$@"
+
+log "Updating git submodules (src/tools) for loon-env installation..."
+run git submodule update --init --recursive
 
 log "Checking for existing installation lock..."
 
@@ -1146,7 +1173,7 @@ if [[ -f "/etc/os-release" ]]; then
 else
     # TODO: Add support for other operating systems in the future
     warn "Unable to detect operating system. This installer is designed for Ubuntu"
-    read  -p "Do you want to continue anyway? (y/N) " -n 1 -r
+    read  -p "Do you want to continue anyway? (y/N) " -n 1 -r || true
     echo
     if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
         error "Installation aborted."
@@ -1178,7 +1205,6 @@ install_loon_env
 apply_buffers
 install_config_mtu
 install_loon_tools
-update_git
 setup_workspace
 set_variables
 
@@ -1192,7 +1218,7 @@ run "sudo chmod -R 755 /opt/ros/$ROS_DISTRO"
 run "sudo chown -R :$GROUP_NAME /opt/ros/$ROS_DISTRO"
 
 if [[ "$SKIP_OTHER_COMPONENTS" -ne 1 ]]; then
-    read -p "MTU configuration is required for Loon-Env to function properly. Do you want to run the MTU configuration script now? (Y/n) " -n 1 -r
+    read -p "MTU configuration is required for Loon-Env to function properly. Do you want to run the MTU configuration script now? (Y/n) " -n 1 -r || true
     echo
     if [[ "$REPLY" =~ ^[Yy]$ ]]; then
         run 'sudo '$CONFIG_MTU_SCRIPT_INSTALL

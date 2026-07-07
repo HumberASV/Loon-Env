@@ -35,10 +35,6 @@ services:
       args:
         - ZED_SDK_VERSION=${ZED_SDK_VERSION:-5.2}
         - L4T_VERSION=${L4T_VERSION:-36.4}
-        - ZED_WRAPPER_REPO=${ZED_WRAPPER_REPO:-https://github.com/HumberASV/zed-ros2-wrapper.git}
-        - ZED_WRAPPER_GIT_REF=${ZED_WRAPPER_GIT_REF:-built-in}
-        - ZED_EXAMPLES_REPO=${ZED_EXAMPLES_REPO:-https://github.com/stereolabs/zed-ros2-examples.git}
-        - ZED_EXAMPLES_GIT_REF=${ZED_EXAMPLES_GIT_REF:-master}
     runtime: nvidia
     stdin_open: true
     tty: true
@@ -69,6 +65,7 @@ services:
       - /var/nvidia/nvcam/settings/:/var/nvidia/nvcam/settings/
       - /usr/local/zed/resources:/usr/local/zed/resources
       - /usr/local/bin/LoonTools:/usr/local/bin/LoonTools:ro
+      - /usr/local/bin/loon_hub:/usr/local/bin/loon_hub:ro
       - /usr/local/zed/settings:/usr/local/zed/settings
       - /etc/systemd/system/zed_x_daemon.service:/etc/systemd/system/zed_x_daemon.service:ro
       - /etc/nv_tegra_release:/host-nv_tegra_release:ro
@@ -89,8 +86,6 @@ services:
       args:
         - ZED_SDK_VERSION=${ZED_SDK_VERSION:-5.2}
         - L4T_VERSION=${L4T_VERSION:-36.4}
-        - LOONE_REPO=${LOONE_REPO:-https://github.com/HumberASV/Loon-E.git}
-        - LOONE_GIT_REF=${LOONE_GIT_REF:-main}
     runtime: nvidia
     privileged: true
     network_mode: host
@@ -117,6 +112,8 @@ services:
       - ${LOONE_FILES_DIR}/cyclonedds.xml:/home/robo/cyclonedds.xml:ro
       - ${LOONE_WORKSPACE_DIR}/loon_ws:/home/robo/loone_ws
       - ${LOONE_FILES_DIR}:/home/robo/files:ro
+      - /usr/local/bin/LoonTools:/usr/local/bin/LoonTools:ro
+      - /usr/local/bin/loon_hub:/usr/local/bin/loon_hub:ro
     deploy:
       resources:
         reservations:
