@@ -3,6 +3,8 @@
 Loon-Env is the full package for setting up Loon-E's development environment.
 
 > ![Important](https://img.shields.io/badge/Important-Read%20Before%20Editing-orange) ![License](https://img.shields.io/badge/License-MIT-green) ![Last%20Updated](https://img.shields.io/badge/Last%20Updated-2026--05--25-blue)
+>
+> [![Unit Tests](https://github.com/HumberASV/Loon-Env/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/HumberASV/Loon-Env/actions/workflows/unit-tests.yml) [![Regression Tests](https://github.com/HumberASV/Loon-Env/actions/workflows/regression.yml/badge.svg)](https://github.com/HumberASV/Loon-Env/actions/workflows/regression.yml)
 
 > [!IMPORTANT]
 > ANY changes you make to the local ./Loon-Env directory will be reflected upon running the LoonEnv script, which will copy necessary files to the installation directory and set up the ROS 2 workspace.
