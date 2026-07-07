@@ -21,14 +21,13 @@
 
 
 # This Dockerfile sets up the environment for ZED camera development using ROS 2 Humble on NVIDIA Jetson devices.
-# It installs examples so you may want to edit this file to change that
+# Source is not baked into the image: compose.yaml bind-mounts the host's
+# live zed_ws clone (zed_ros2_wrapper, zed_ros_examples, interfaces - see
+# LoonEnv's clone_workspace_repo()) to /home/robo/zed_ws, and the actual
+# colcon build runs at container-start via `LoonTools -c colcon zed`.
 
 FROM nvcr.io/nvidia/isaac/ros:aarch64-ros2_humble_4c0c55dddd2bbcc3e8d5f9753bee634c
 
-ARG ZED_WRAPPER_REPO=https://github.com/HumberASV/zed-ros2-wrapper.git
-ARG ZED_WRAPPER_GIT_REF=master
-ARG ZED_EXAMPLES_REPO=https://github.com/stereolabs/zed-ros2-examples.git
-ARG ZED_EXAMPLES_GIT_REF=master
 ARG ZED_SDK_VERSION=5.2
 ARG L4T_VERSION=36.4
 
@@ -128,75 +127,42 @@ RUN set -eux; \
 
 
 # -----------------------------
-# 3. Set up ROS workspace
+# 3. zed_ws workspace placeholder
 # -----------------------------
-RUN mkdir -p /home/robo/ros2_ws/src
-WORKDIR /home/robo/ros2_ws/
-
-# -----------------------------
-# 4. Install wrapper for camera and examples
-# -----------------------------
-
-# Install wrapper for camera
-RUN echo "Using zed-ros2-wrapper ref: ${ZED_WRAPPER_GIT_REF}" && \
-    git clone --recurse-submodules "${ZED_WRAPPER_REPO}" src/zed-ros2-wrapper && \
-    cd src/zed-ros2-wrapper && \
-    git fetch --all --tags && \
-    git checkout "${ZED_WRAPPER_GIT_REF}" && \
-    git submodule update --init --recursive
-
-# (Optional) Install examples for wrapper
-RUN echo "Using zed-ros2-examples ref: ${ZED_EXAMPLES_GIT_REF}" && \
-    git clone --recurse-submodules "${ZED_EXAMPLES_REPO}" src/zed-ros2-examples && \
-    cd src/zed-ros2-examples && \
-    git fetch --all --tags && \
-    git checkout "${ZED_EXAMPLES_GIT_REF}" && \
-    git submodule update --init --recursive
+# No source is cloned here; compose.yaml mounts the host's live zed_ws
+# clone (see LoonEnv's clone_workspace_repo()) over this directory at
+# container start - the actual colcon build runs then, via
+# `LoonTools -c colcon zed`, not at image-build time.
+RUN mkdir -p /home/robo/zed_ws/src && chown -R robo:robo /home/robo/zed_ws
+WORKDIR /home/robo/zed_ws
 
 # -----------------------------
-# 5. Build ROS workspace
-# -----------------------------
-
-WORKDIR /home/robo/ros2_ws/
-
-# TODO: move this to a script because it can cause connection issues for remote work
-# RUN /bin/bash -c "source /opt/ros/humble/setup.bash && \
-#   apt-get update && \
-#   rosdep update && \
-#   rosdep install --from-paths src --ignore-src -r -y && \
-#   colcon build --parallel-workers 4 --symlink-install \
-#     --event-handlers console_direct+ \
-#     --base-paths src \
-#     --cmake-clean-cache \
-#     --cmake-args \
-#       -DCMAKE_BUILD_TYPE=Release \
-#       -DZED_SDK_ROOT=/usr/local/zed \
-#       -DCMAKE_LIBRARY_PATH=/usr/local/cuda/lib64/stubs \
-#       -DCMAKE_CXX_FLAGS=\"-Wl,--allow-shlib-undefined\" \
-#       --no-warn-unused-cli && \
-#   rm -rf /var/lib/apt/lists/*"
-
-# -----------------------------
-# 6. NGC Assets & Final Setup
+# 4. NGC Assets & Final Setup
 # -----------------------------
 ENV MAJOR_VERSION=3
 ENV MINOR_VERSION=1
+# NOTE: downloaded outside /home/robo/zed_ws (not under src/) because that
+# directory is entirely replaced by the bind mount above at container
+# start - anything baked into it here would never be visible at runtime.
 RUN VERSION_REQ_URL="https://catalog.ngc.nvidia.com/api/resources/versions?orgName=nvidia&teamName=isaac&name=isaac_ros_yolov8_assets&isPublic=true&pageNumber=0&pageSize=100&sortOrder=CREATED_DATE_DESC" && \
     LATEST_VERSION_ID=$(curl -s -H "Accept: application/json" "$VERSION_REQ_URL" | jq -r ".recipeVersions[] | .versionId as \$v | \$v | select(test(\"^\\\\d+\\\\.\\\\d+\\\\.\\\\d+$\")) | split(\".\") | {major: .[0]|tonumber, minor: .[1]|tonumber, patch: .[2]|tonumber} | select(.major == $MAJOR_VERSION and .minor <= $MINOR_VERSION) | \$v" | sort -V | tail -n 1) && \
     if [ -n "$LATEST_VERSION_ID" ]; then \
-        mkdir -p /root/ros2_ws/src/isaac_ros_assets && \
+        mkdir -p /home/robo/isaac_ros_assets && \
         curl -LO --request GET "https://api.ngc.nvidia.com/v2/resources/nvidia/isaac/isaac_ros_yolov8_assets/versions/$LATEST_VERSION_ID/files/quickstart.tar.gz" && \
-        tar -xf quickstart.tar.gz -C /root/ros2_ws/src/isaac_ros_assets && \
+        tar -xf quickstart.tar.gz -C /home/robo/isaac_ros_assets && \
         rm quickstart.tar.gz; \
     fi
 
 RUN test -f /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 && \
     ln -sf /usr/lib/aarch64-linux-gnu/tegra/libv4l2.so.0 /usr/lib/aarch64-linux-gnu/libv4l2.so || true
 
-RUN sudo apt install ros-$ROS_DISTRO-rmw-cyclonedds-cpp
+RUN sudo apt install ros-humble-rmw-cyclonedds-cpp
 
+# NOTE: a stray inline "#" comment used to sit between these && \-continued
+# lines; bash splices backslash-newline continuations before comment
+# parsing, so that "#" silently swallowed every export below it and they
+# never ran. Removed the dead comment line so these actually execute.
 RUN echo "source /opt/ros/humble/setup.bash" >> /home/robo/.bashrc && \
-    # echo "test -f /home/robo/ros2_ws/install/setup.bash && source /home/robo/ros2_ws/install/setup.bash" >> /home/robo/.bashrc && \
     echo "export ROS_LOCALHOST_ONLY=\${ROS_LOCALHOST_ONLY:-0}" >> /home/robo/.bashrc && \
     echo "export RMW_IMPLEMENTATION=\${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}" >> /home/robo/.bashrc && \
     echo "export ROS_DOMAIN_ID=\${ROS_DOMAIN_ID:-0}" >> /home/robo/.bashrc && \
@@ -210,6 +176,6 @@ RUN echo "export L4T_VERSION=${L4T_VERSION}" >> /home/robo/.bashrc
 ENV ZED_SDK_VERSION=${ZED_SDK_VERSION}
 RUN echo "export ZED_SDK_VERSION=${ZED_SDK_VERSION}" >> /home/robo/.bashrc
 
-WORKDIR /home/robo/ros2_ws
+WORKDIR /home/robo/zed_ws
 
-RUN chown -R robo:robo /home/robo/ros2_ws
+RUN chown -R robo:robo /home/robo/zed_ws

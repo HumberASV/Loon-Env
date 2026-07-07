@@ -443,11 +443,11 @@ install_docker() {
     if ! gpg --list-keys | grep -q "Docker Release"; then
         log "Adding Docker GPG key..."
         run 'sudo install -m 0755 -d /etc/apt/keyrings'
-        run 'sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor > /usr/share/keyrings/docker-archive-keyring.gpg'
+        run 'curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor | sudo tee /etc/apt/keyrings/docker.gpg > /dev/null'
         run 'sudo chmod a+r /etc/apt/keyrings/docker.gpg'
 
         log "Verifying Docker GPG key..."
-        if ! gpg --keyring /usr/share/keyrings/docker-archive-keyring.gpg --list-keys | grep -q "Docker Release"; then
+        if ! gpg --keyring /etc/apt/keyrings/docker.gpg --list-keys | grep -q "Docker Release"; then
                 error "Failed to verify Docker GPG key."
             exit 1
         else
@@ -569,8 +569,11 @@ install_zedsdk() {
         return
     fi
     log "Installing ZED SDK..."
+    local SHORT_L4T=""
     if [[ $L4T_VERSION =~ ^R([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
-        local SHORT_L4T="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+        SHORT_L4T="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+    elif [[ $L4T_VERSION =~ ^([0-9]+)\.([0-9]+)$ ]]; then
+        SHORT_L4T="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
     fi
     run wget -q "https://download.stereolabs.com/zedsdk/${ZED_SDK_VERSION}/l4t${SHORT_L4T}/jetsons" -O zed_sdk.run && \
     chmod +x zed_sdk.run && ./zed_sdk.run -- silent skip_cuda && rm zed_sdk.run
