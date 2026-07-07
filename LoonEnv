@@ -1175,7 +1175,7 @@ if [[ -f "/etc/os-release" ]]; then
 else
     # TODO: Add support for other operating systems in the future
     warn "Unable to detect operating system. This installer is designed for Ubuntu"
-    read  -p "Do you want to continue anyway? (y/N) " -n 1 -r
+    read  -p "Do you want to continue anyway? (y/N) " -n 1 -r || true
     echo
     if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
         error "Installation aborted."
@@ -1220,7 +1220,7 @@ run "sudo chmod -R 755 /opt/ros/$ROS_DISTRO"
 run "sudo chown -R :$GROUP_NAME /opt/ros/$ROS_DISTRO"
 
 if [[ "$SKIP_OTHER_COMPONENTS" -ne 1 ]]; then
-    read -p "MTU configuration is required for Loon-Env to function properly. Do you want to run the MTU configuration script now? (Y/n) " -n 1 -r
+    read -p "MTU configuration is required for Loon-Env to function properly. Do you want to run the MTU configuration script now? (Y/n) " -n 1 -r || true
     echo
     if [[ "$REPLY" =~ ^[Yy]$ ]]; then
         run 'sudo '$CONFIG_MTU_SCRIPT_INSTALL
