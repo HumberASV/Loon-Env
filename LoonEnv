@@ -67,6 +67,11 @@ BOLD=$(tput bold)
 # Variables to hold detected versions
 ZED_SDK_VERSION="5.2" #Default
 
+# Default branch/ref to check out after cloning the ZED ROS2 wrapper repo.
+# LoonDock's build --virtual/--hardware flags check out a different ref on
+# this same clone before building, this is only the ref used on first clone.
+ZED_WRAPPER_DEFAULT_REF="zedx"
+
 # TODO: Add support for other ROS distros and operating systems in the future
 ROS_DISTRO="humble" # Default
 OPERATING_SYSTEM="ubuntu" # Default
@@ -752,23 +757,25 @@ download_dependencies_for_zed_wrapper() {
     local BACKWARD_ROS_VERSION=1.0.7
     local PYPI_URL=https://pypi.jetson-ai-lab.io/jp6/cu126
 
-    run 'find ./src/zed_ws/src -mindepth 1 -maxdepth 1 ! -name "zed_ros_examples" ! -name "zed_ros2_wrapper" ! -name "interfaces" -exec rm -rf {} +'
+    local zed_ws_src="$WORKSPACE_DIR/zed_ws/src"
+
+    run "find '$zed_ws_src' -mindepth 1 -maxdepth 1 ! -name 'zed_ros_examples' ! -name 'zed_ros2_wrapper' ! -name 'interfaces' -exec rm -rf {} +"
     log "[Download] Cleaned existing src directory while preserving zed_ros_examples and zed_ros2_wrapper"
     log "$BOLD[Download] Downloading a ton of git repostiories for zed wrapper$PRIMARY"
-    log "[Download] Downloading dependencies for ZED ROS2 Wrapper into ./src/zed_ws/src..."
-    run "wget -qO- https://github.com/ros/xacro/archive/refs/tags/${XACRO_VERSION}.tar.gz | tar -xvz && mv xacro-${XACRO_VERSION} ./src/zed_ws/src/xacro"
-    run "wget -qO- https://github.com/ros/diagnostics/archive/refs/tags/${DIAGNOSTICS_VERSION}.tar.gz | tar -xvz && mv diagnostics-${DIAGNOSTICS_VERSION} ./src/zed_ws/src/diagnostics"
-    run "wget -qO- https://github.com/ament/ament_lint/archive/refs/tags/${AMENT_LINT_VERSION}.tar.gz | tar -xvz && mv ament_lint-${AMENT_LINT_VERSION} ./src/zed_ws/src/ament-lint"
-    run "wget -qO- https://github.com/cra-ros-pkg/robot_localization/archive/refs/tags/${ROBOT_LOCALIZATION_VERSION}.tar.gz | tar -xvz && mv robot_localization-${ROBOT_LOCALIZATION_VERSION} ./src/zed_ws/src/robot-localization"
-    #run "wget -qO- https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_nitros/archive/refs/tags/v3.2-13.tar.gz | tar -xvz && mv isaac_ros_nitros-3.2-13 ./src/zed_ws/src/isaac_ros_nitros"
-    #run "wget -qO- https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/${ZED_MSGS_VERSION}.tar.gz | tar -xvz && mv zed-ros2-interfaces-${ZED_MSGS_VERSION} ./src/zed_ws/src/zed-ros2-interfaces"
-    run "wget -qO- https://github.com/ros-drivers/nmea_msgs/archive/refs/tags/${NMEA_MSGS_VERSION}.tar.gz | tar -xvz && mv nmea_msgs-${NMEA_MSGS_VERSION} ./src/zed_ws/src/nmea_msgs"
-    run "wget -qO- https://github.com/ros/angles/archive/refs/tags/${ANGLES_VERSION}.tar.gz | tar -xvz && mv angles-${ANGLES_VERSION} ./src/zed_ws/src/angles"
-    run "wget -qO- https://github.com/ros2/rmw_cyclonedds/archive/refs/tags/${RMW_CYCLONEDDS_VERSION}.tar.gz | tar -xvz && mv rmw_cyclonedds-${RMW_CYCLONEDDS_VERSION} ./src/zed_ws/src/rmw_cyclonedds"
-    run "wget -qO- https://github.com/ros-geographic-info/geographic_info/archive/refs/tags/${GEOGRAPHIC_INFO_VERSION}.tar.gz | tar -xvz && mv geographic_info-${GEOGRAPHIC_INFO_VERSION} ./src/zed_ws/src/geographic-info"
-    run "wget -qO- https://github.com/pal-robotics/backward_ros/archive/refs/tags/${BACKWARD_ROS_VERSION}.tar.gz | tar -xvz && mv backward_ros-${BACKWARD_ROS_VERSION} ./src/zed_ws/src/backward_ros"
-    run "cp -r ./src/zed_ws/src/geographic-info/geographic_msgs/ ./src/zed_ws/src/geographic-msgs/"
-    run "rm -rf ./src/zed_ws/src/geographic-info"
+    log "[Download] Downloading dependencies for ZED ROS2 Wrapper into $zed_ws_src..."
+    run "wget -qO- https://github.com/ros/xacro/archive/refs/tags/${XACRO_VERSION}.tar.gz | tar -xvz && mv xacro-${XACRO_VERSION} '$zed_ws_src/xacro'"
+    run "wget -qO- https://github.com/ros/diagnostics/archive/refs/tags/${DIAGNOSTICS_VERSION}.tar.gz | tar -xvz && mv diagnostics-${DIAGNOSTICS_VERSION} '$zed_ws_src/diagnostics'"
+    run "wget -qO- https://github.com/ament/ament_lint/archive/refs/tags/${AMENT_LINT_VERSION}.tar.gz | tar -xvz && mv ament_lint-${AMENT_LINT_VERSION} '$zed_ws_src/ament-lint'"
+    run "wget -qO- https://github.com/cra-ros-pkg/robot_localization/archive/refs/tags/${ROBOT_LOCALIZATION_VERSION}.tar.gz | tar -xvz && mv robot_localization-${ROBOT_LOCALIZATION_VERSION} '$zed_ws_src/robot-localization'"
+    #run "wget -qO- https://github.com/NVIDIA-ISAAC-ROS/isaac_ros_nitros/archive/refs/tags/v3.2-13.tar.gz | tar -xvz && mv isaac_ros_nitros-3.2-13 '$zed_ws_src/isaac_ros_nitros'"
+    #run "wget -qO- https://github.com/stereolabs/zed-ros2-interfaces/archive/refs/tags/${ZED_MSGS_VERSION}.tar.gz | tar -xvz && mv zed-ros2-interfaces-${ZED_MSGS_VERSION} '$zed_ws_src/zed-ros2-interfaces'"
+    run "wget -qO- https://github.com/ros-drivers/nmea_msgs/archive/refs/tags/${NMEA_MSGS_VERSION}.tar.gz | tar -xvz && mv nmea_msgs-${NMEA_MSGS_VERSION} '$zed_ws_src/nmea_msgs'"
+    run "wget -qO- https://github.com/ros/angles/archive/refs/tags/${ANGLES_VERSION}.tar.gz | tar -xvz && mv angles-${ANGLES_VERSION} '$zed_ws_src/angles'"
+    run "wget -qO- https://github.com/ros2/rmw_cyclonedds/archive/refs/tags/${RMW_CYCLONEDDS_VERSION}.tar.gz | tar -xvz && mv rmw_cyclonedds-${RMW_CYCLONEDDS_VERSION} '$zed_ws_src/rmw_cyclonedds'"
+    run "wget -qO- https://github.com/ros-geographic-info/geographic_info/archive/refs/tags/${GEOGRAPHIC_INFO_VERSION}.tar.gz | tar -xvz && mv geographic_info-${GEOGRAPHIC_INFO_VERSION} '$zed_ws_src/geographic-info'"
+    run "wget -qO- https://github.com/pal-robotics/backward_ros/archive/refs/tags/${BACKWARD_ROS_VERSION}.tar.gz | tar -xvz && mv backward_ros-${BACKWARD_ROS_VERSION} '$zed_ws_src/backward_ros'"
+    run "cp -r '$zed_ws_src/geographic-info/geographic_msgs/' '$zed_ws_src/geographic-msgs/'"
+    run "rm -rf '$zed_ws_src/geographic-info'"
 }
 
 
@@ -782,70 +789,31 @@ download_dependencies_for_zed_wrapper() {
 #  Creates the ROS 2 workspace directory structure and source file for environment variables
 ###############################
 setup_workspace() {
-   
+
 
     local src_dir="$WORKSPACE_DIR"
 
-    log "[Setup Workspace] updating git submodules for loon-env installation..."
-    run git submodule update --init --recursive
-
     log "[Setup Workspace] Creating ROS 2 workspace at $WORKSPACE_DIR..."
     run 'mkdir -p '$src_dir
-    run 'mkdir -p '$WORKSPACE_DIR'/zed_ws'
+    run 'mkdir -p '$WORKSPACE_DIR'/zed_ws/src'
     run 'mkdir -p '$WORKSPACE_DIR'/loon_ws'
     run 'mkdir -p '$WORKSPACE_DIR'/docker'
-    log $(ls -A $WORKSPACE_DIR/loon_ws)
-    log $(ls -A $WORKSPACE_DIR/zed_ws)
-    log $(ls -A $WORKSPACE_DIR/docker)
 
-    log "[Setup Workspace] Moving$BLUE ./src/loon_ws$PRIMARY to $WORKSPACE_DIR/loon_ws if it exists..."
+    log "[Setup Workspace] Cloning$BLUE loon_ws$PRIMARY (Loon-E) into $WORKSPACE_DIR/loon_ws if needed..."
 
     loon_ws() {
-
-        # if $WORKSPACE_DIR/loon_ws is empty
-        if [[ ! $(ls -A $WORKSPACE_DIR/loon_ws) ]]; then 
-            run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
-            log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
-        else # not empty
-            warn "Existing loon_ws found in workspace directory but it is not empty."
-            if [[ "$FORCE_LOONE_INSTALL" -eq 1 ]]  || \
-                confirm "Do you want to overwrite the existing loon_ws in the workspace directory with the one in $BLUE./src?$PRIMARY (This will delete any existing files in $WORKSPACE_DIR/loon_ws)?"; then
-                
-                if [[ "$FORCE_LOONE_INSTALL" -eq 1 ]]; then
-                    log "Force flag for LoonE installation is set. Overwriting existing loon_ws in workspace directory with the one in ./src..."
-                fi
-
-                run rm -rf "$WORKSPACE_DIR/loon_ws/"
-                run cp -r "./src/loon_ws" "$WORKSPACE_DIR"
-                log "[Setup Workspace] Moved$BLUE loon_ws$PRIMARY to workspace directory."
-            else
-                log "[Setup Workspace] Skipping move of$BLUE loon_ws$PRIMARY to workspace directory."
-            fi
-        fi
+        clone_workspace_repo "https://github.com/HumberASV/loon-e.git" \
+            "$WORKSPACE_DIR/loon_ws" "main" "$FORCE_LOONE_INSTALL" "loon_ws (Loon-E)"
     }
- 
+
     zed_ws() {
-        # if empty
-        if [[ ! $(ls -A $WORKSPACE_DIR/zed_ws) ]]; then
-            run 'git submodule update --init --recursive'
-            download_dependencies_for_zed_wrapper
-            run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
-        else #not empty
-            warn "Existing$BLUE zed_ws$PRIMARY found in$BLUE $WORKSPACE_DIR/zed_ws $PRIMARY but it is not empty."
-            if [[ "$FORCE_ZED_INSTALL" -eq 1 ]] || \
-                confirm "Do you want to overwrite the existing$BLUE zed_ws$PRIMARY in the workspace directory with the one in $BLUE./src?$PRIMARY"; then
-                
-                if [[ "$FORCE_ZED_INSTALL" -eq 1 ]]; then
-                    log "Force flag for ZED ROS2 Wrapper installation is set. Overwriting existing zed_ws in workspace directory with the one in ./src..."
-                fi
-                download_dependencies_for_zed_wrapper # also cleans the src directory while preserving zed_ros_examples and zed_ros2_wrapper
-                rm -rf "$WORKSPACE_DIR/zed_ws/"
-                run cp -r "./src/zed_ws" "$WORKSPACE_DIR"
-                log "[Setup Workspace] Moved zed_ws to workspace directory."
-            else
-                log "[Setup Workspace] Skipping move for ZED ROS2 Wrapper into ./src/zed_ws/src."
-            fi
-        fi
+        clone_workspace_repo "https://github.com/HumberASV/zed-ros2-wrapper.git" \
+            "$WORKSPACE_DIR/zed_ws/src/zed_ros2_wrapper" "$ZED_WRAPPER_DEFAULT_REF" "$FORCE_ZED_INSTALL" "zed_ros2_wrapper"
+        clone_workspace_repo "https://github.com/stereolabs/zed-ros2-examples.git" \
+            "$WORKSPACE_DIR/zed_ws/src/zed_ros_examples" "master" "$FORCE_ZED_INSTALL" "zed_ros_examples"
+        clone_workspace_repo "https://github.com/stereolabs/zed-ros2-interfaces.git" \
+            "$WORKSPACE_DIR/zed_ws/src/interfaces" "5.3.0" "$FORCE_ZED_INSTALL" "zed-ros2-interfaces"
+        download_dependencies_for_zed_wrapper
     }
 
     docker_ws() {
@@ -1053,20 +1021,6 @@ remove_loon_env() {
 
 
 #################################
-# update repositories
-# Globals:
-# None
-# Arguements:
-# None:
-# Outputs:
-# New repository if user selects or force flag is set, otherwise does nothing
-#################################
-update_git() {
-    log "[Git Updater] Checking src directory"
-    check_repo "./src/loon_ws/src/loon_e" "LoonE" "$FORCE_LOONE_INSTALL"
-}
-
-#################################
 # Checks a repo for updates and asks
 # Globals:
 # None
@@ -1099,9 +1053,51 @@ check_repo(){
     fi
 }
 
+#################################
+# Clones a repo into the workspace if the target directory is missing/empty.
+# If it already exists and is non-empty, offers to remove and re-clone
+# (respecting a force flag/confirm), otherwise falls back to check_repo()
+# to look for upstream updates on the existing clone.
+# Globals:
+# None
+# Arguments:
+# $1 - repo_url
+# $2 - target_dir
+# $3 - ref (branch/tag/commit to check out after cloning; may be empty)
+# $4 - force_flag
+# $5 - friendly name for logging
+#################################
+clone_workspace_repo() {
+    local repo_url="$1"
+    local target_dir="$2"
+    local ref="$3"
+    local force_flag="$4"
+    local name="$5"
+
+    if [[ ! -d "$target_dir" || ! $(ls -A "$target_dir" 2>/dev/null) ]]; then
+        log "[Setup Workspace] Cloning $name into $target_dir..."
+        run "git clone --recurse-submodules '$repo_url' '$target_dir'"
+        [[ -n "$ref" ]] && run "(cd '$target_dir' && git fetch --all --tags && git checkout '$ref' && git submodule update --init --recursive)"
+    else
+        warn "Existing ${BLUE}$name${PRIMARY} clone found at ${BLUE}$target_dir${PRIMARY} but it is not empty."
+        if [[ "$force_flag" -eq 1 ]] || confirm "Remove and re-clone $name at $target_dir? (this discards any local changes)"; then
+            [[ "$force_flag" -eq 1 ]] && log "Force flag set for $name. Re-cloning..."
+            run "rm -rf '$target_dir'"
+            run "git clone --recurse-submodules '$repo_url' '$target_dir'"
+            [[ -n "$ref" ]] && run "(cd '$target_dir' && git fetch --all --tags && git checkout '$ref' && git submodule update --init --recursive)"
+        else
+            log "[Setup Workspace] Skipping re-clone of $name; checking for upstream updates instead..."
+            check_repo "$target_dir" "$name" "$force_flag"
+        fi
+    fi
+}
+
 # >>> Main Script <<<
 
 parse_arguments "$@"
+
+log "Updating git submodules (src/tools) for loon-env installation..."
+run git submodule update --init --recursive
 
 log "Checking for existing installation lock..."
 
@@ -1178,7 +1174,6 @@ install_loon_env
 apply_buffers
 install_config_mtu
 install_loon_tools
-update_git
 setup_workspace
 set_variables
 
