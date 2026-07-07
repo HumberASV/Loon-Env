@@ -323,6 +323,9 @@ require_zedsdk() {
     if [[ -f "/usr/local/zed/zed-config-version.cmake" ]]; then
         ZED_VERSION=$(sudo cat /usr/local/zed/zed-config-version.cmake | grep "set(PACKAGE_VERSION \"" | sed -E 's/set\(PACKAGE_VERSION "(.*)"\)/\1/')
         log "Found ZED SDK version $ZED_VERSION"
+    elif [[ "$DRY_RUN" -eq 1 ]]; then
+        warn "ZED SDK not found (continuing because --dry-run is set)."
+        ZED_VERSION="dry-run-unknown"
     else
         error "ZED SDK not found. Please install it and try again."
         exit 1
@@ -492,10 +495,15 @@ install_docker() {
 ##################################
 install_ros() {
     log "Checking for nvidia jetpack"
-    local nvidia_jetpack_installed=$(dpkg -l | grep nvidia-jetpack)
+    local nvidia_jetpack_installed
+    nvidia_jetpack_installed=$(dpkg -l | grep nvidia-jetpack || true)
     if [[ -z "$nvidia_jetpack_installed" ]]; then
-        error "NVIDIA Jetpack not found. Please install NVIDIA Jetpack and try again."
-        exit 1
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            warn "NVIDIA Jetpack not found (continuing because --dry-run is set)."
+        else
+            error "NVIDIA Jetpack not found. Please install NVIDIA Jetpack and try again."
+            exit 1
+        fi
     fi
     log "NVIDIA Jetpack detected. Proceeding with ROS 2 installation check."
 
@@ -686,8 +694,14 @@ installation() {
     log "[Installation] Git is available. Proceeding with installation."
 
     # Check for NVIDIA GPU and drivers
-    require_command "nvidia-smi" \
-        "NVIDIA GPU not detected. Ensure you are using Jetpack on a compatible NVIDIA Jetson device with proper drivers installed."
+    if ! command -v nvidia-smi &> /dev/null; then
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+            warn "NVIDIA GPU not detected (continuing because --dry-run is set)."
+        else
+            error "NVIDIA GPU not detected. Ensure you are using Jetpack on a compatible NVIDIA Jetson device with proper drivers installed."
+            exit 1
+        fi
+    fi
 
 
     log "[Installation] Checking zed sdk installation..."
