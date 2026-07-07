@@ -11,9 +11,9 @@ Read this README before making any changes to the Loon-Env repository. It contai
 
 ## Description
 
-This repository contains `LoonEnv`, a setup script that checks for required dependencies and can install them automatically. It adds environment variables to the user's bashrc, installs Docker and the correct ZED SDK, installs the LoonE script into the system bin directory and its assets to /opt/, configures the MTU for the ZEDX wrapper, downloads LoonE and ZEDX packages and their dependencies, and creates a ROS 2 workspace owned by the local user and shared group. `LoonEnv` also provides verbose and dry-run modes for debugging.
+This repository contains `LoonEnv`, a setup script that checks for required dependencies and can install them automatically. It adds environment variables to the user's bashrc, installs Docker and the correct ZED SDK, installs the LoonDock script into the system bin directory and its assets to /opt/, configures the MTU for the ZEDX wrapper, downloads Loon-E and ZED-X packages and their dependencies, and creates a ROS 2 workspace owned by the local user and shared group. `LoonEnv` also provides verbose and dry-run modes for debugging.
 
-It also includes the `LoonE` script, a convenient wrapper for managing the Docker environment for the Loon-E project. It can build the Docker image, start the container, and enter it with a single command. Inside the ZED container, day-to-day work stays under the non-root `robo` user, while package refresh and maintenance commands use `sudo`.
+It also includes the `LoonDock` script, a convenient wrapper for managing the Docker environment for the Loon-E project. It can build the Docker image, start the container, and enter it with a single command. Inside the ZED container, day-to-day work stays under the non-root `robo` user, while package refresh and maintenance commands use `sudo`.
 
 ## Getting Started
 

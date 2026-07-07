@@ -33,10 +33,10 @@ VERSION="4.0.2" # Change this on each release
 # Fix: 
 PATH_INSTALL="/opt/loon-env"
 LOONTOOLS_INSTALL="/usr/local/bin/LoonTools"
-LOONE_SCRIPT_INSTALL="/usr/local/bin/LoonE"
+LOONDOCK_SCRIPT_INSTALL="/usr/local/bin/LoonDock"
 CONFIG_MTU_SCRIPT_INSTALL="/usr/local/bin/configMTU"
 SCRIPTS_SOURCE="./src/tools/scripts"
-LOONE_SOURCE=$SCRIPTS_SOURCE/LoonE
+LOONDOCK_SOURCE=$SCRIPTS_SOURCE/LoonDock
 ASSETS_DIR="./src/assets"
 WORKSPACE_DIR="/home/$(whoami)/LoonE_ws"
 GROUP_NAME="loon-env-users"
@@ -714,7 +714,7 @@ set_variables() {
         run 'echo "export XAUTHORITY=/home/'$(whoami)'/.Xauthority" >> ~/.loon_env_setup.bash'
         run 'echo "export L4T_VERSION='$L4T_VERSION'" >> ~/.loon_env_setup.bash'
         run 'echo "export CYCLONEDDS_URI=file:///opt/cyclonedds.xml" >> ~/.loon_env_setup.bash'
-        # Default wrapper ref: streaming for virtual builds, zedx for hardware builds (LoonE will override per-profile)
+        # Default wrapper ref: streaming for virtual builds, zedx for hardware builds (LoonDock will override per-profile)
         run 'echo "export ZED_WRAPPER_GIT_REF=zedx" >> ~/.loon_env_setup.bash'
         log "[Set Variables] Environment variables set and exported to ~/.loon_env_setup.bash"
     fi
@@ -917,8 +917,8 @@ setup_workspace() {
 #  VERSION
 #  PATH_INSTALL
 #  ASSETS_DIR
-#  LOON_E_SOURCE
-#  LOON_E_SCRIPT_INSTALL
+#  LOONDOCK_SOURCE
+#  LOONDOCK_SCRIPT_INSTALL
 # Arguments:
 #  None
 # Outputs:
@@ -944,28 +944,28 @@ install_loon_env() {
     log "[Install ENV] Setting ownership for $PATH_INSTALL to $USERNAME:$GROUP_NAME"
     run "sudo chown -R $USERNAME:$GROUP_NAME $PATH_INSTALL"
 
-    log "[Install ENV] Moving copy of Loon-Env script to $LOONE_SCRIPT_INSTALL"
-    run "sudo mkdir -p $(dirname $LOONE_SCRIPT_INSTALL)"
-    if [[ ! -f "$LOONE_SOURCE" ]]; then
-        error "LoonE source not found at $LOONE_SOURCE"
+    log "[Install ENV] Moving copy of Loon-Env script to $LOONDOCK_SCRIPT_INSTALL"
+    run "sudo mkdir -p $(dirname $LOONDOCK_SCRIPT_INSTALL)"
+    if [[ ! -f "$LOONDOCK_SOURCE" ]]; then
+        error "LoonDock source not found at $LOONDOCK_SOURCE"
         exit 1
     fi
-    run "sudo rm -f $LOONE_SCRIPT_INSTALL"
-    run "sudo cp $LOONE_SOURCE $LOONE_SCRIPT_INSTALL"
-    
-    log "[Install ENV] Loon-Env script copied to $LOONE_SCRIPT_INSTALL"
+    run "sudo rm -f $LOONDOCK_SCRIPT_INSTALL"
+    run "sudo cp $LOONDOCK_SOURCE $LOONDOCK_SCRIPT_INSTALL"
+
+    log "[Install ENV] Loon-Env script copied to $LOONDOCK_SCRIPT_INSTALL"
 
     # Set group ownership and permissions for the script
-    run "sudo chown :$GROUP_NAME $LOONE_SCRIPT_INSTALL"
+    run "sudo chown :$GROUP_NAME $LOONDOCK_SCRIPT_INSTALL"
 
     # Make the script executable
-    run "sudo chmod 755 $LOONE_SCRIPT_INSTALL"
-    
-    log "[Install ENV] Permissions set for $LOONE_SCRIPT_INSTALL: group ownership to $GROUP_NAME and executable by all users."
+    run "sudo chmod 755 $LOONDOCK_SCRIPT_INSTALL"
+
+    log "[Install ENV] Permissions set for $LOONDOCK_SCRIPT_INSTALL: group ownership to $GROUP_NAME and executable by all users."
 
     # Verify installation
-    if [[ -f "$LOONE_SCRIPT_INSTALL" ]]; then
-        log "[Install ENV] Loon-Env script installed successfully at $LOONE_SCRIPT_INSTALL."
+    if [[ -f "$LOONDOCK_SCRIPT_INSTALL" ]]; then
+        log "[Install ENV] Loon-Env script installed successfully at $LOONDOCK_SCRIPT_INSTALL."
     else
         error "Failed to install Loon-Env script."
         exit 1
@@ -1037,7 +1037,7 @@ install_loon_tools() {
 # Remove Loon-Env installation by deleting the installation directory and main script
 # Globals:
 #  PATH_INSTALL
-#  LOON_E_SCRIPT_INSTALL
+#  LOONDOCK_SCRIPT_INSTALL
 # Arguments:
 #  None
 # Outputs:
@@ -1046,7 +1046,7 @@ install_loon_tools() {
 remove_loon_env() {
     log "Removing Loon-Env installation..."
     run 'sudo rm -rf '$PATH_INSTALL
-    run 'sudo rm -f '$LOONE_SCRIPT_INSTALL
+    run 'sudo rm -f '$LOONDOCK_SCRIPT_INSTALL
     run 'sudo rm -f '$CONFIG_MTU_SCRIPT_INSTALL
     echo "${GREEN}${BOLD}[INFO] ${PRIMARY}Loon-Env installation removed successfully. Sorry to see you go! (not actually sorry)"
 }

@@ -7,8 +7,8 @@ The LoonEnv script will perform the following tasks:
 1. Create a group for Loon-Env users and add the current user to it
 2. Check for and optionally install necessary dependencies
 3. Set up environment variables for the workspace and docker images
-4. Install LoonE scripts and assets to the installation directory
-5. Create a ROS 2 workspace with necessary subdirectories for LoonE and ZEDX packages
+4. Install LoonDock and LoonTools scripts and assets to the installation directory
+5. Create a ROS 2 workspace with necessary subdirectories for Loon-E and ZED-X packages
 
 Loon-Env will set up the following directory structure for the ROS 2 workspace:
 
