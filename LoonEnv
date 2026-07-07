@@ -56,14 +56,15 @@ FORCE_LOONE_INSTALL=0
 FORCE_ZED_INSTALL=0
 SKIP_OTHER_COMPONENTS=0
 
-# Colors for stdout
-PRIMARY=$(tput sgr0)
-RED=$(tput setaf 9)
-GREEN=$(tput setaf 2)
-YELLOW=$(tput setaf 3)
-ORANGE=$(tput setaf 202)
-BLUE=$(tput setaf 4)
-BOLD=$(tput bold)
+# Colors for stdout - fall back to no color if tput has no terminal to work
+# with (e.g. TERM unset in CI), rather than letting set -e kill the script
+PRIMARY=$(tput sgr0 2>/dev/null || true)
+RED=$(tput setaf 9 2>/dev/null || true)
+GREEN=$(tput setaf 2 2>/dev/null || true)
+YELLOW=$(tput setaf 3 2>/dev/null || true)
+ORANGE=$(tput setaf 202 2>/dev/null || true)
+BLUE=$(tput setaf 4 2>/dev/null || true)
+BOLD=$(tput bold 2>/dev/null || true)
 
 # Variables to hold detected versions
 ZED_SDK_VERSION="5.2" #Default
