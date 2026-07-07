@@ -1,0 +1,100 @@
+name: Unit Tests
+
+# Fast, per-push/PR smoke test. Real installs need Jetson hardware that
+# doesn't exist in CI, so this only exercises --help/--version and a full
+# --dry-run pass (no commands actually execute under --dry-run).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Shellcheck (blocking - errors only)
+        run: |
+          shellcheck -S error -s bash \
+            LoonEnv \
+            src/tools/scripts/LoonDock \
+            src/tools/scripts/LoonTools \
+            src/tools/scripts/configMTU \
+            src/tools/scripts/dependency/loon_hub
+
+      - name: Shellcheck (informational - full report, non-blocking)
+        continue-on-error: true
+        run: |
+          shellcheck -s bash \
+            LoonEnv \
+            src/tools/scripts/LoonDock \
+            src/tools/scripts/LoonTools \
+            src/tools/scripts/configMTU \
+            src/tools/scripts/dependency/loon_hub
+
+  smoke-test:
+    name: Smoke test (dry-run)
+    needs: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Make scripts executable
+        run: |
+          chmod +x LoonEnv \
+            src/tools/scripts/LoonDock \
+            src/tools/scripts/LoonTools \
+            src/tools/scripts/configMTU \
+            src/tools/scripts/dependency/loon_hub
+
+      - name: Add LoonTools scripts to PATH
+        run: |
+          echo "$GITHUB_WORKSPACE/src/tools/scripts" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/src/tools/scripts/dependency" >> "$GITHUB_PATH"
+
+      - name: LoonEnv --help / --version
+        run: |
+          ./LoonEnv --help
+          ./LoonEnv --version
+
+      - name: Run LoonEnv --dry-run end to end
+        run: ./LoonEnv --dry-run --verbose < /dev/null | tee "$RUNNER_TEMP/loonenv-dryrun.log"
+
+      - name: Confirm the dry run reached completion
+        run: grep -q "Loon-Env installation complete" "$RUNNER_TEMP/loonenv-dryrun.log"
+
+      - name: LoonDock --help / --version
+        run: |
+          LoonDock --help
+          LoonDock --version
+
+      - name: LoonTools --help / --version
+        run: |
+          LoonTools --help
+          LoonTools --version
+
+      - name: configMTU --help / --version
+        run: |
+          configMTU --help
+          configMTU --version
+
+      - name: configMTU does not hang on empty stdin
+        run: |
+          set +e
+          timeout 5 configMTU < /dev/null
+          status=$?
+          set -e
+          if [ "$status" -eq 124 ]; then
+            echo "::error::configMTU hung waiting for input on empty stdin"
+            exit 1
+          fi

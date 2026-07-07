@@ -1,0 +1,97 @@
+name: Regression Tests
+
+# Broader, slower checks that don't need to run on every push: whether the
+# external repos LoonEnv clones still have the refs it expects, and a wider
+# matrix of flag combinations than unit-tests.yml covers. Still can't do
+# real installs (no Jetson hardware in CI), so this is still --dry-run only.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  upstream-refs:
+    name: Check upstream repo refs
+    runs-on: ubuntu-latest
+    steps:
+      - name: loon-e.git @ main
+        run: git ls-remote --exit-code https://github.com/HumberASV/loon-e.git main
+
+      - name: zed-ros2-wrapper.git @ zedx
+        run: git ls-remote --exit-code https://github.com/HumberASV/zed-ros2-wrapper.git zedx
+
+      - name: zed-ros2-examples.git @ master
+        run: git ls-remote --exit-code https://github.com/stereolabs/zed-ros2-examples.git master
+
+      - name: zed-ros2-interfaces.git @ 5.3.0
+        run: git ls-remote --exit-code https://github.com/stereolabs/zed-ros2-interfaces.git 5.3.0
+
+  flag-matrix:
+    name: LoonEnv flags (${{ matrix.args }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        args:
+          - "--dry-run"
+          - "--dry-run -v"
+          - "--dry-run -f docker"
+          - "--dry-run -f loone"
+          - "--dry-run -f zed"
+          - "--dry-run -f docker loone zed"
+          - "--dry-run -f docker -s"
+          - "--dry-run -s"
+          - "--dry-run -r"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Make scripts executable
+        run: |
+          chmod +x LoonEnv \
+            src/tools/scripts/LoonDock \
+            src/tools/scripts/LoonTools \
+            src/tools/scripts/configMTU \
+            src/tools/scripts/dependency/loon_hub
+
+      - name: Add LoonTools scripts to PATH
+        run: |
+          echo "$GITHUB_WORKSPACE/src/tools/scripts" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/src/tools/scripts/dependency" >> "$GITHUB_PATH"
+
+      - name: ./LoonEnv ${{ matrix.args }}
+        run: ./LoonEnv ${{ matrix.args }} < /dev/null
+
+  loondock-flag-matrix:
+    name: LoonDock flags (${{ matrix.args }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        args:
+          - "--dry-run -b --virtual zed"
+          - "--dry-run -b --hardware loone"
+          - "--dry-run --health"
+          - "--dry-run --stop all"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Make scripts executable
+        run: |
+          chmod +x src/tools/scripts/LoonDock \
+            src/tools/scripts/LoonTools \
+            src/tools/scripts/dependency/loon_hub
+
+      - name: Add LoonTools scripts to PATH
+        run: |
+          echo "$GITHUB_WORKSPACE/src/tools/scripts" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/src/tools/scripts/dependency" >> "$GITHUB_PATH"
+
+      - name: LoonDock ${{ matrix.args }}
+        run: LoonDock ${{ matrix.args }} < /dev/null
