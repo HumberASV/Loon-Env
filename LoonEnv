@@ -777,7 +777,7 @@ download_dependencies_for_zed_wrapper() {
 
     run "find '$zed_ws_src' -mindepth 1 -maxdepth 1 ! -name 'zed_ros_examples' ! -name 'zed_ros2_wrapper' ! -name 'interfaces' -exec rm -rf {} +"
     log "[Download] Cleaned existing src directory while preserving zed_ros_examples and zed_ros2_wrapper"
-    log "$BOLD[Download] Downloading a ton of git repostiories for zed wrapper$PRIMARY"
+    log "${BOLD}[Download] Downloading a ton of git repostiories for zed wrapper${PRIMARY}"
     log "[Download] Downloading dependencies for ZED ROS2 Wrapper into $zed_ws_src..."
     run "wget -qO- https://github.com/ros/xacro/archive/refs/tags/${XACRO_VERSION}.tar.gz | tar -xvz && mv xacro-${XACRO_VERSION} '$zed_ws_src/xacro'"
     run "wget -qO- https://github.com/ros/diagnostics/archive/refs/tags/${DIAGNOSTICS_VERSION}.tar.gz | tar -xvz && mv diagnostics-${DIAGNOSTICS_VERSION} '$zed_ws_src/diagnostics'"
