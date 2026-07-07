@@ -737,8 +737,6 @@ set_variables() {
         run 'echo "export XAUTHORITY=/home/'$(whoami)'/.Xauthority" >> ~/.loon_env_setup.bash'
         run 'echo "export L4T_VERSION='$L4T_VERSION'" >> ~/.loon_env_setup.bash'
         run 'echo "export CYCLONEDDS_URI=file:///opt/cyclonedds.xml" >> ~/.loon_env_setup.bash'
-        # Default wrapper ref: streaming for virtual builds, zedx for hardware builds (LoonDock will override per-profile)
-        run 'echo "export ZED_WRAPPER_GIT_REF=zedx" >> ~/.loon_env_setup.bash'
         log "[Set Variables] Environment variables set and exported to ~/.loon_env_setup.bash"
     fi
     log "[Set Variables] Setting ~/.bashrc to source ~/.loon_env_setup.bash if it exists"
