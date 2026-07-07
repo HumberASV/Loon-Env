@@ -949,20 +949,25 @@ install_loon_env() {
 
     log "[Install ENV] Permissions set for $LOONDOCK_SCRIPT_INSTALL: group ownership to $GROUP_NAME and executable by all users."
 
-    # Verify installation
-    if [[ -f "$LOONDOCK_SCRIPT_INSTALL" ]]; then
-        log "[Install ENV] Loon-Env script installed successfully at $LOONDOCK_SCRIPT_INSTALL."
+    # Verify installation - skipped under --dry-run since run() never
+    # actually copies anything, so these paths would never exist yet
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        log "[Install ENV] Skipping install verification because --dry-run is set."
     else
-        error "Failed to install Loon-Env script."
-        exit 1
-    fi
+        if [[ -f "$LOONDOCK_SCRIPT_INSTALL" ]]; then
+            log "[Install ENV] Loon-Env script installed successfully at $LOONDOCK_SCRIPT_INSTALL."
+        else
+            error "Failed to install Loon-Env script."
+            exit 1
+        fi
 
-    # verify assets installation
-    if [[ -d "$PATH_INSTALL/assets" ]]; then
-        log "[Install ENV] Loon-Env assets installed successfully at $PATH_INSTALL/assets."
-    else
-        error "Failed to install Loon-Env assets."
-        exit 1
+        # verify assets installation
+        if [[ -d "$PATH_INSTALL/assets" ]]; then
+            log "[Install ENV] Loon-Env assets installed successfully at $PATH_INSTALL/assets."
+        else
+            error "Failed to install Loon-Env assets."
+            exit 1
+        fi
     fi
 
     log "[Setup Workspace] Setting ownership for workspace directories to $USERNAME:$GROUP_NAME"
