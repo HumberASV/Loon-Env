@@ -60,24 +60,26 @@ Clone the Loon-Env repository to your local machine:
 
 ### Execution
 
-Enter the repository directory, give the `LoonEnv` script execute permissions, and run it:
+Enter the repository directory, give the `LoonEnv` script execute permissions, and run it with the system you are installing:
 
 ```bash
      cd Loon-Env
      sudo chmod +x LoonEnv
-     ./LoonEnv
+     ./LoonEnv orin
 ```
+
+The system argument is required and must be one of `basestation`, `orin`, `website`, or `all`. Run `./LoonEnv --help` for the full option list.
 
 > [!IMPORTANT]
 > The LoonEnv script will perform several operations that may require sudo privileges, such as installing dependencies, permissions, and modifying system files. Make sure to review the script and understand the changes it will make to your system before running it. Dry-run mode can be used to see the commands that will be executed without making any changes.
 > ```bash
->     ./LoonEnv --dry-run
+>     ./LoonEnv --dry-run orin
 > ```
 
-You can also force install dependencies with the *install* tag:
+You can also install missing dependencies without being prompted with the *install* tag:
 
 ```bash
-     ./LoonEnv -i
+     ./LoonEnv -i orin
 ```
 
 ### Container Maintenance Model

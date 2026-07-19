@@ -49,8 +49,10 @@ FORCE_OPTIONS=(
     "all"
 )
 
-# Arrays to hold which components to force install
-FORCE_SELECTED=()
+# Per-component force flags, set by --force
+FORCE_DOCKER_INSTALL=0
+FORCE_LOONE_INSTALL=0
+FORCE_ZED_INSTALL=0
 
 # Flag to skip install non-forced components, 
 # used in conjunction with --force when user only wants to install specific components without prompts
@@ -118,23 +120,29 @@ ROS_APT_DEPENDENCIES=(
 ###############################
 usage() {
     cat <<EOF
-Usage: $(basename "$0") [OPTIONS] [SYSTEM]
+Usage: $(basename "$0") [OPTIONS] <SYSTEM>
 
-Choices for SYSTEM:
-  choices: ${INSTALLATION_OPTIONS[*]}
+SYSTEM is required. Choices: ${INSTALLATION_OPTIONS[*]}
 
 Options:
   -d, --dry-run        Show what would be done without making changes
   -f, --force [COMP]   Force install everything, or restrict to specific components
                          Choices: ${FORCE_OPTIONS[*]}
                          Accepts multiple components (e.g., -f docker -f zed)
+                         A bare -f is equivalent to -f all
   -h, --help           Show this help message and exit
+  -i, --install-deps   Install missing dependencies without prompting
   -r, --remove         Remove Loon-Env installation
   -s, --skip           Skip installation of scripts and MTU configuration
       --skip-others    When forcing specific components, skips all unmentioned ones
   -v, --verbose        Enable verbose output
       --version        Show the version of the installer and exit
       --cyclonedds     Use CycloneDDS (rmw_cyclonedds_cpp) instead of the default eProsima Fast DDS
+
+Examples:
+  $(basename "$0") orin                 Install the onboard (Jetson) component
+  $(basename "$0") -v --dry-run orin    Preview the install with verbose output
+  $(basename "$0") -f docker -f zed orin
 EOF
 }
 
@@ -211,25 +219,29 @@ parse_arguments() {
             --version) version; exit 0 ;;
             -v|--verbose) VERBOSE=1 ;;
             -i|--install-deps) INSTALL_DEPS=1 ;;
-            --dry-run) DRY_RUN=1 ;;
+            -d|--dry-run) DRY_RUN=1 ;;
             --cyclonedds) USE_CYCLONEDDS=1 ;;
             -s|--skip) SKIP_SCRIPTS_AND_MTU=1 ;;
             --skip-others) SKIP_OTHER_COMPONENTS=1 ;;
             -r|--remove) remove_loon_env; exit 0 ;;
             -f|--force)
-                get_force "$@"
-                break
+                # Consume the next argument only when it names a component, so
+                # that a bare -f still means "force everything" and any flags
+                # that follow are left for this loop to handle.
+                if is_force_option "${2:-}"; then
+                    set_force_component "$2"
+                    shift
+                elif [[ -n "${2:-}" && "$2" != -* ]] && ! is_system_option "$2"; then
+                    error "Unknown component for --force: $2. Choices: ${FORCE_OPTIONS[*]}"
+                    usage; exit 1
+                else
+                    set_force_component "all"
+                fi
                 ;;
             *)
-                local is_system=0
-                for opt in "${INSTALLATION_OPTIONS[@]}"; do
-                    if [[ "$1" == "$opt" ]]; then
-                        SELECTED_SYSTEMS+=("$1")
-                        is_system=1
-                        break
-                    fi
-                done
-                if [[ "$is_system" -eq 0 ]]; then
+                if is_system_option "$1"; then
+                    SELECTED_SYSTEMS+=("$1")
+                else
                     error "Unknown option: $1"; usage; exit 1
                 fi
                 ;;
@@ -238,18 +250,69 @@ parse_arguments() {
     done
 }
 
-get_force(){
-
-    while [[ "$#" -gt 1 ]]; do
-        case "$2" in
-            docker) FORCE_DOCKER_INSTALL=1 ;;
-            loone) FORCE_LOONE_INSTALL=1 ;;
-            zed) FORCE_ZED_INSTALL=1 ;;
-            --skip-others) SKIP_OTHER_COMPONENTS=1 ;;
-            *) break ;;
-        esac
-        shift
+##################################
+# Report whether an argument names a --force component
+# Globals:
+#  FORCE_OPTIONS
+# Arguments:
+#  $1 - candidate argument
+# Returns:
+#  0 if the argument is one of FORCE_OPTIONS, 1 otherwise
+##################################
+is_force_option() {
+    local candidate="$1"
+    [[ -n "$candidate" ]] || return 1
+    for opt in "${FORCE_OPTIONS[@]}"; do
+        [[ "$candidate" == "$opt" ]] && return 0
     done
+    return 1
+}
+
+##################################
+# Report whether an argument names an installable system
+# Globals:
+#  INSTALLATION_OPTIONS
+# Arguments:
+#  $1 - candidate argument
+# Returns:
+#  0 if the argument is one of INSTALLATION_OPTIONS, 1 otherwise
+##################################
+is_system_option() {
+    local candidate="$1"
+    [[ -n "$candidate" ]] || return 1
+    for opt in "${INSTALLATION_OPTIONS[@]}"; do
+        [[ "$candidate" == "$opt" ]] && return 0
+    done
+    return 1
+}
+
+##################################
+# Set the force flag for a single component
+# Globals:
+#  FORCE_DOCKER_INSTALL
+#  FORCE_LOONE_INSTALL
+#  FORCE_ZED_INSTALL
+# Arguments:
+#  $1 - component name (docker, loone, zed, all)
+# Outputs:
+#  Sets the corresponding force flag(s)
+##################################
+set_force_component() {
+    case "$1" in
+        docker) FORCE_DOCKER_INSTALL=1 ;;
+        loone)  FORCE_LOONE_INSTALL=1 ;;
+        zed)    FORCE_ZED_INSTALL=1 ;;
+        all)
+            FORCE_DOCKER_INSTALL=1
+            FORCE_LOONE_INSTALL=1
+            FORCE_ZED_INSTALL=1
+            ;;
+        *)
+            error "Unknown component for --force: $1. Choices: ${FORCE_OPTIONS[*]}"
+            usage
+            exit 1
+            ;;
+    esac
 }
 
 # >>> Installation Functions <<<
@@ -564,7 +627,17 @@ installation() {
             "NVIDIA GPU not detected. Ensure you are using Jetpack on a compatible NVIDIA Jetson device with proper drivers installed."
     fi
 
+    # -i/--install-deps auto-approves the missing-dependency prompt. loon_hub's
+    # confirm() short-circuits on FORCE, and every require_* check above has
+    # already run, so raising FORCE here affects only this prompt. It is
+    # restored right after so the later workspace-overwrite prompts still ask.
+    local previous_force="$FORCE"
+    if [[ "$INSTALL_DEPS" -eq 1 ]]; then
+        log "[Installation] --install-deps set; installing missing packages without prompting."
+        FORCE=1
+    fi
     install_missing_apt_packages
+    FORCE="$previous_force"
 
     if [[ "$REQUIRE_PNPM" -eq 1 ]]; then
         if ! command -v pnpm &> /dev/null; then
@@ -905,35 +978,35 @@ install_loon_env() {
     log "[Install ENV] Setting ownership for $PATH_INSTALL to $USERNAME:$GROUP_NAME"
     run "sudo chown -R $USERNAME:$GROUP_NAME $PATH_INSTALL"
 
-    log "[Install ENV] Moving copy of Loon-Env script to $LOONE_SCRIPT_INSTALL"
-    run "sudo mkdir -p $(dirname $LOONE_SCRIPT_INSTALL)"
-    if [[ ! -f "$LOONE_SOURCE" ]]; then
-        error "LoonE source not found at $LOONE_SOURCE"
+    log "[Install ENV] Moving copy of LoonDock script to $LOONDOCK_SCRIPT_INSTALL"
+    run "sudo mkdir -p $(dirname $LOONDOCK_SCRIPT_INSTALL)"
+    if [[ ! -f "$LOONDOCK_SOURCE" ]]; then
+        error "LoonDock source not found at $LOONDOCK_SOURCE"
         exit 1
     fi
-    run "sudo rm -f $LOONE_SCRIPT_INSTALL"
-    run "sudo cp $LOONE_SOURCE $LOONE_SCRIPT_INSTALL"
-    
-    log "[Install ENV] Loon-Env script copied to $LOONE_SCRIPT_INSTALL"
+    run "sudo rm -f $LOONDOCK_SCRIPT_INSTALL"
+    run "sudo cp $LOONDOCK_SOURCE $LOONDOCK_SCRIPT_INSTALL"
+
+    log "[Install ENV] LoonDock script copied to $LOONDOCK_SCRIPT_INSTALL"
 
     # Set group ownership and permissions for the script
-    run "sudo chown :$GROUP_NAME $LOONE_SCRIPT_INSTALL"
+    run "sudo chown :$GROUP_NAME $LOONDOCK_SCRIPT_INSTALL"
 
     # Make the script executable
-    run "sudo chmod 755 $LOONE_SCRIPT_INSTALL"
-    
-    log "[Install ENV] Permissions set for $LOONE_SCRIPT_INSTALL: group ownership to $GROUP_NAME and executable by all users."
+    run "sudo chmod 755 $LOONDOCK_SCRIPT_INSTALL"
 
-    # Verify installation
-    if [[ -f "$LOONE_SCRIPT_INSTALL" ]]; then
-        log "[Install ENV] Loon-Env script installed successfully at $LOONE_SCRIPT_INSTALL."
+    log "[Install ENV] Permissions set for $LOONDOCK_SCRIPT_INSTALL: group ownership to $GROUP_NAME and executable by all users."
+
+    # Verify installation (nothing was copied under --dry-run, so skip the check)
+    if [[ "$DRY_RUN" -eq 1 || -f "$LOONDOCK_SCRIPT_INSTALL" ]]; then
+        log "[Install ENV] LoonDock script installed successfully at $LOONDOCK_SCRIPT_INSTALL."
     else
-        error "Failed to install Loon-Env script."
+        error "Failed to install LoonDock script."
         exit 1
     fi
 
     # verify assets installation
-    if [[ -d "$PATH_INSTALL/assets" ]]; then
+    if [[ "$DRY_RUN" -eq 1 || -d "$PATH_INSTALL/assets" ]]; then
         log "[Install ENV] Loon-Env assets installed successfully at $PATH_INSTALL/assets."
     else
         error "Failed to install Loon-Env assets."
@@ -1006,9 +1079,12 @@ install_loon_tools() {
 ###############################
 remove_loon_env() {
     log "Removing Loon-Env installation..."
-    run 'sudo rm -rf '$PATH_INSTALL
-    run 'sudo rm -f '$LOONE_SCRIPT_INSTALL
-    run 'sudo rm -f '$CONFIG_MTU_SCRIPT_INSTALL
+    # ${VAR:?} aborts rather than expanding to nothing: an unset path here would
+    # turn these into an argument-less (or, worse, root-relative) rm.
+    run 'sudo rm -rf '"${PATH_INSTALL:?PATH_INSTALL is unset; refusing to remove}"
+    run 'sudo rm -f '"${LOONDOCK_SCRIPT_INSTALL:?LOONDOCK_SCRIPT_INSTALL is unset; refusing to remove}"
+    run 'sudo rm -f '"${CONFIG_MTU_SCRIPT_INSTALL:?CONFIG_MTU_SCRIPT_INSTALL is unset; refusing to remove}"
+    run 'sudo rm -f '"${LOONTOOLS_INSTALL:?LOONTOOLS_INSTALL is unset; refusing to remove}"
     echo "${GREEN}${BOLD}[INFO] ${PRIMARY}Loon-Env installation removed successfully. Sorry to see you go! (not actually sorry)"
 }
 
@@ -1024,7 +1100,9 @@ remove_loon_env() {
 #################################
 update_git() {
     log "[Git Updater] Checking src directory"
-    check_repo "./src/loon_ws/src/loon_e" "LoonE" "$FORCE_LOONE_INSTALL"
+    # The git repository is the loon_ws submodule itself; src/loone below it is
+    # just a package directory and has no .git of its own.
+    check_repo "$THIS_SCRIPT_DIR/src/loon_ws" "LoonE" "$FORCE_LOONE_INSTALL"
 }
 
 #################################
@@ -1039,17 +1117,43 @@ update_git() {
 check_repo(){
     local repoLocation="$1"
     local name="$2"
-    local forceFlag="$3" || 0;
+    local forceFlag="${3:-0}"
+
+    # A submodule's .git is a file (a gitlink), not a directory, so test -e.
+    if [[ ! -e "$repoLocation/.git" ]]; then
+        warn "[Git Check] $repoLocation is not a git repository. Skipping update check for $name."
+        return 0
+    fi
+
     log "[Git Check] For updates at $name repository at $repoLocation"
-    local git=$(cd $repoLocation && git fetch --dry-run -v)
-    if [[ -n "$git" ]]; then
+
+    # Compare local HEAD against the remote branch head. The previous approach
+    # tested whether `git fetch --dry-run -v` produced output, which never
+    # worked: fetch reports on stderr, and it prints "[up to date]" lines even
+    # when there is nothing to pull.
+    local branch local_hash remote_hash
+    branch="$(git -C "$repoLocation" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "HEAD")"
+    if [[ "$branch" == "HEAD" ]]; then
+        warn "[Git Check] $name is in detached HEAD state. Skipping update check."
+        return 0
+    fi
+
+    local_hash="$(git -C "$repoLocation" rev-parse HEAD 2>/dev/null || echo "")"
+    remote_hash="$(git -C "$repoLocation" ls-remote origin "refs/heads/$branch" 2>/dev/null | awk '{print $1}')"
+
+    if [[ -z "$remote_hash" ]]; then
+        warn "[Git Check] Could not reach the remote for $name (branch $branch). Skipping update check."
+        return 0
+    fi
+
+    if [[ "$local_hash" != "$remote_hash" ]]; then
         log "[Git Check] Updates found for $name repository. Pulling latest changes..."
         if [[ "$forceFlag" -eq 1 ]]; then
             log "[Git Check] Force flag is set for $name repository. Pulling latest changes without confirmation..."
-            run "(cd $repoLocation && git pull)"
+            run "git -C '$repoLocation' pull"
         else
             if confirm "Updates found for $name repository. Do you want to pull the latest changes?"; then
-                run "(cd $repoLocation && git pull)"
+                run "git -C '$repoLocation' pull"
                 echo "[Git Check] $name repository updated successfully."
             else
                 log "[Git Check] Skipping update for $name repository."
@@ -1062,7 +1166,31 @@ check_repo(){
 
 # >>> Main Script <<<
 
+# Path variables are resolved before argument parsing because options that exit
+# early (notably --remove) act on these paths. Setting them afterwards left them
+# empty, turning removal into a no-op that still reported success.
+L4T_VERSION="$(sed -n 's/^# \(R[0-9]\+\).*, REVISION: \([0-9.]\+\).*/\1.\2/p' /etc/nv_tegra_release 2>/dev/null || echo "unknown")"
+THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Installer path variables: source dirs derived from THIS_SCRIPT_DIR, install targets from loon_hub constants
+PATH_INSTALL="$LOON_ENV_FOLDER_DIR"
+ASSETS_DIR="$THIS_SCRIPT_DIR/src/assets"
+SCRIPTS_SOURCE="$THIS_SCRIPT_DIR/src/tools/scripts"
+LOONDOCK_SOURCE="$SCRIPTS_SOURCE/LoonDock"
+LOONDOCK_SCRIPT_INSTALL="$SCRIPT_PATH/LoonDock"
+CONFIG_MTU_SCRIPT_INSTALL="$SCRIPT_PATH/configMTU"
+LOONTOOLS_INSTALL="$SCRIPT_PATH/LoonTools"
+
+USERNAME="$(whoami)"
+USER_HOME="$(eval echo "~$USERNAME")"
+
 parse_arguments "$@"
+
+if [[ "${#SELECTED_SYSTEMS[@]}" -eq 0 ]]; then
+    error "No system selected. Choose one of: ${INSTALLATION_OPTIONS[*]}"
+    usage
+    exit 1
+fi
 
 log "Checking for existing installation lock..."
 
@@ -1116,22 +1244,6 @@ else
         log "Continuing with installation despite unsupported operating system."
     fi
 fi
-
-log "Detecting various system information for installation..."
-L4T_VERSION="$(sed -n 's/^# \(R[0-9]\+\).*, REVISION: \([0-9.]\+\).*/\1.\2/p' /etc/nv_tegra_release 2>/dev/null || echo "unknown")"
-THIS_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Installer path variables: source dirs derived from THIS_SCRIPT_DIR, install targets from loon_hub constants
-PATH_INSTALL="$LOON_ENV_FOLDER_DIR"
-ASSETS_DIR="$THIS_SCRIPT_DIR/src/assets"
-SCRIPTS_SOURCE="$THIS_SCRIPT_DIR/src/tools/scripts"
-LOONE_SOURCE="$SCRIPTS_SOURCE/LoonE"
-LOONE_SCRIPT_INSTALL="$SCRIPT_PATH/LoonE"
-CONFIG_MTU_SCRIPT_INSTALL="$SCRIPT_PATH/configMTU"
-LOONTOOLS_INSTALL="$SCRIPT_PATH/LoonTools"
-
-USERNAME="$(whoami)"
-USER_HOME="$(eval echo "~$USERNAME")"
 
 log "Detected OS: $NAME $VERSION_ID"
 log "Detected L4T version: $L4T_VERSION"
